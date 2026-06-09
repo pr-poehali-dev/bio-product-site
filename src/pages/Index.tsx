@@ -8,6 +8,15 @@ const STEFANI_IMAGE = "https://cdn.poehali.dev/projects/eb4796b4-3ec9-42cb-87db-
 const CHAT_API    = "https://functions.poehali.dev/0dd1813d-413c-4595-9a50-a307b6e38777";
 const HISTORY_API = "https://functions.poehali.dev/e19a899e-b2dc-4a03-ab9d-ad98e9113f98";
 
+// Аватары с разными выражениями для главной
+const REACTION_IMAGES: Record<string, string> = {
+  default:  STEFANI_IMAGE,
+  happy:    "https://cdn.poehali.dev/projects/eb4796b4-3ec9-42cb-87db-7dcd64d116d5/files/c33805d5-e76e-4929-9d6e-e2abd5841005.jpg",
+  intense:  "https://cdn.poehali.dev/projects/eb4796b4-3ec9-42cb-87db-7dcd64d116d5/files/2a5459ae-a927-4417-b122-d623ef6fc381.jpg",
+  playful:  "https://cdn.poehali.dev/projects/eb4796b4-3ec9-42cb-87db-7dcd64d116d5/files/93d41c80-7975-41d2-8dd4-64d6cf6b0e90.jpg",
+  curious:  "https://cdn.poehali.dev/projects/eb4796b4-3ec9-42cb-87db-7dcd64d116d5/files/6c09cbf9-5823-467d-917e-abbc69584265.jpg",
+};
+
 type Mood = "calm" | "focused" | "intense" | "playful";
 type Emotion = "neutral" | "happy" | "empathetic" | "serious" | "curious" | "thinking" | "focused" | "calm" | "playful" | "intense";
 type Message = { role: "user" | "stefani"; text: string; time: string; emotion?: Emotion };
@@ -219,6 +228,177 @@ function SpeakButton({
         : <><Icon name="Volume2" size={10} /><span>слушать</span></>
       }
     </button>
+  );
+}
+
+// ─── Hero с живыми реакциями ──────────────────────────
+
+const MOOD_TO_REACTION: Record<Mood, keyof typeof REACTION_IMAGES> = {
+  calm:    "default",
+  focused: "intense",
+  intense: "intense",
+  playful: "playful",
+};
+
+const REACTION_PHRASES: Record<string, { emoji: string; text: string; color: string }> = {
+  default:  { emoji: "😌", text: "Готова к разговору",    color: "#06b6d4" },
+  happy:    { emoji: "😊", text: "Рада тебя видеть!",     color: "#22c55e" },
+  intense:  { emoji: "🔥", text: "Сосредоточена. Давай.", color: "#ef4444" },
+  playful:  { emoji: "😏", text: "Попробуй удивить меня", color: "#f59e0b" },
+  curious:  { emoji: "🤔", text: "Интересно... что дальше?", color: "#8b5cf6" },
+};
+
+// Автоматическая смена реакций на главной
+const IDLE_REACTIONS: Array<keyof typeof REACTION_IMAGES> = ["default", "happy", "curious", "playful", "default", "default"];
+
+function HeroSection({ mood, setMood, onStart, userName }: {
+  mood: Mood;
+  setMood: (m: Mood) => void;
+  onStart: () => void;
+  userName: string;
+}) {
+  const [reaction, setReaction] = useState<keyof typeof REACTION_IMAGES>("default");
+  const [imgLoaded, setImgLoaded] = useState(true);
+  const [transitioning, setTransitioning] = useState(false);
+  const idxRef = useRef(0);
+
+  // Автосмена реакций каждые 4 секунды
+  useEffect(() => {
+    const iv = setInterval(() => {
+      idxRef.current = (idxRef.current + 1) % IDLE_REACTIONS.length;
+      const next = IDLE_REACTIONS[idxRef.current];
+      setTransitioning(true);
+      setTimeout(() => {
+        setReaction(next);
+        setImgLoaded(false);
+        setTransitioning(false);
+      }, 250);
+    }, 4000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // Реакция на смену настроения
+  useEffect(() => {
+    const r = MOOD_TO_REACTION[mood];
+    setTransitioning(true);
+    setTimeout(() => {
+      setReaction(r);
+      setImgLoaded(false);
+      setTransitioning(false);
+    }, 200);
+  }, [mood]);
+
+  const currentReaction = REACTION_PHRASES[reaction] || REACTION_PHRASES.default;
+  const currentImg = REACTION_IMAGES[reaction] || STEFANI_IMAGE;
+  const moodCfg = MOOD_CONFIG[mood];
+
+  return (
+    <section className="relative z-10 flex flex-col items-center text-center px-6 pt-4 pb-12">
+      {/* Аватар с живыми реакциями */}
+      <div className="relative mb-10 animate-float">
+        {/* Аура цвета реакции */}
+        <div className="absolute inset-0 rounded-full transition-all duration-700"
+          style={{
+            transform: "scale(1.6)",
+            background: `radial-gradient(circle, ${currentReaction.color}22 0%, transparent 70%)`,
+            animation: "pulse-glow 3s ease-in-out infinite",
+          }}
+        />
+
+        {/* Фото с переходом */}
+        <div className="relative w-52 h-52 rounded-full overflow-hidden scan-overlay"
+          style={{
+            border: `2px solid ${currentReaction.color}bb`,
+            boxShadow: `0 0 50px ${currentReaction.color}50, 0 0 100px ${currentReaction.color}20`,
+            transition: "border-color 0.5s, box-shadow 0.5s",
+          }}
+        >
+          <img
+            src={currentImg}
+            alt="Stefani"
+            onLoad={() => setImgLoaded(true)}
+            className="w-full h-full object-cover transition-all duration-500"
+            style={{
+              opacity: transitioning ? 0 : imgLoaded ? 1 : 0,
+              transform: transitioning ? "scale(1.05)" : "scale(1)",
+            }}
+          />
+          {/* Предыдущее фото как fallback пока грузится */}
+          <img
+            src={STEFANI_IMAGE}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover -z-10"
+            style={{ opacity: imgLoaded ? 0 : 1 }}
+          />
+          <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, transparent 55%, rgba(5,10,20,0.85) 100%)" }} />
+        </div>
+
+        {/* Вращающиеся кольца */}
+        <div className="absolute inset-0 -m-8 rounded-full border border-cyan-400/15 animate-spin" style={{ animationDuration: "14s" }} />
+        <div className="absolute inset-0 -m-16 rounded-full border border-violet-400/08 animate-spin" style={{ animationDuration: "22s", animationDirection: "reverse" }} />
+
+        {/* Бейдж реакции */}
+        <div
+          className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded-full whitespace-nowrap transition-all duration-500"
+          style={{
+            background: "rgba(5,10,20,0.92)",
+            border: `1px solid ${currentReaction.color}60`,
+            color: currentReaction.color,
+            boxShadow: `0 0 12px ${currentReaction.color}30`,
+          }}
+        >
+          <span className="text-sm" style={{ transition: "all 0.3s" }}>{currentReaction.emoji}</span>
+          <span className="text-xs font-mono">{currentReaction.text}</span>
+        </div>
+      </div>
+
+      <h1 className="font-orbitron font-black mb-3" style={{ fontSize: "clamp(3rem, 10vw, 5rem)", lineHeight: 1 }}>
+        <span className="gradient-text">STEFANI</span>
+      </h1>
+      <div className="font-mono text-cyan-400/55 text-xs tracking-[0.35em] mb-5">
+        УНИВЕРСАЛЬНАЯ · ЖИВАЯ · С ПАМЯТЬЮ
+      </div>
+      <p className="font-rajdhani text-lg text-white/65 max-w-lg leading-relaxed mb-2">
+        {userName
+          ? `${userName}, добро пожаловать. Stefani помнит тебя, умеет всё и говорит как живой человек.`
+          : "Реальный ИИ с характером, голосом и эмоциями. Помнит разговоры. Ищет в интернете. Отвечает как живая."
+        }
+      </p>
+      <p className="font-mono text-cyan-400/40 text-xs tracking-wider mb-10">
+        ГОЛОС · ПАМЯТЬ · ПОИСК · БЕЗ ОГРАНИЧЕНИЙ
+      </p>
+
+      <button onClick={onStart}
+        className="group relative px-12 py-4 rounded-2xl font-orbitron font-bold text-lg text-white transition-all hover:scale-105 active:scale-95 mb-6"
+        style={{
+          background: `linear-gradient(135deg, ${moodCfg.color}30, rgba(139,92,246,0.25))`,
+          border: `1px solid ${moodCfg.color}80`,
+          boxShadow: `0 0 35px ${moodCfg.glow}40`,
+        }}>
+        <span className="flex items-center gap-3">
+          <Icon name="Zap" size={22} />
+          {userName ? `Говорить с Stefani` : "Начать разговор"}
+        </span>
+      </button>
+
+      {/* Mood selector */}
+      <div className="flex gap-2 flex-wrap justify-center mb-2">
+        {(Object.entries(MOOD_CONFIG) as [Mood, typeof MOOD_CONFIG.calm][]).map(([key, val]) => (
+          <button key={key} onClick={() => setMood(key)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-rajdhani font-semibold transition-all hover:scale-105"
+            style={{
+              background: mood === key ? `${val.color}20` : "rgba(255,255,255,0.03)",
+              border: `1px solid ${mood === key ? val.color : val.color + "28"}`,
+              color: mood === key ? val.color : "rgba(255,255,255,0.32)",
+              boxShadow: mood === key ? `0 0 12px ${val.glow}` : "none",
+            }}>
+            <span>{val.emoji}</span>
+            <span>{val.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="text-xs font-mono text-white/20">Выбери настроение — аватар отреагирует</div>
+    </section>
   );
 }
 
@@ -693,75 +873,7 @@ export default function Index() {
       </header>
 
       {/* HERO */}
-      <section className="relative z-10 flex flex-col items-center text-center px-6 pt-4 pb-12">
-        {/* Большой аватар с живой аурой */}
-        <div className="relative mb-10 animate-float">
-          <div className="absolute inset-0 rounded-full"
-            style={{ transform: "scale(1.6)", background: "radial-gradient(circle, rgba(6,182,212,0.15) 0%, transparent 70%)", animation: "pulse-glow 3s ease-in-out infinite" }} />
-          <div className="relative w-52 h-52 rounded-full overflow-hidden scan-overlay"
-            style={{
-              border: "2px solid rgba(6,182,212,0.7)",
-              boxShadow: "0 0 50px rgba(6,182,212,0.35), 0 0 100px rgba(139,92,246,0.15)",
-            }}>
-            <img src={STEFANI_IMAGE} alt="Stefani AI" className="w-full h-full object-cover" />
-            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, transparent 55%, rgba(5,10,20,0.85) 100%)" }} />
-          </div>
-          <div className="absolute inset-0 -m-8 rounded-full border border-cyan-400/15 animate-spin" style={{ animationDuration: "14s" }} />
-          <div className="absolute inset-0 -m-16 rounded-full border border-violet-400/08 animate-spin" style={{ animationDuration: "22s", animationDirection: "reverse" }} />
-
-          {/* Эмоция на главной */}
-          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded-full whitespace-nowrap"
-            style={{ background: "rgba(5,10,20,0.9)", border: "1px solid rgba(6,182,212,0.4)", color: "#06b6d4" }}>
-            <span className="text-sm">😌</span>
-            <span className="text-xs font-mono">Готова к разговору</span>
-          </div>
-        </div>
-
-        <h1 className="font-orbitron font-black mb-3" style={{ fontSize: "clamp(3rem, 10vw, 5rem)", lineHeight: 1 }}>
-          <span className="gradient-text">STEFANI</span>
-        </h1>
-        <div className="font-mono text-cyan-400/55 text-xs tracking-[0.35em] mb-5">
-          УНИВЕРСАЛЬНАЯ · ЭМОЦИОНАЛЬНАЯ · С ПАМЯТЬЮ
-        </div>
-        <p className="font-rajdhani text-lg text-white/65 max-w-lg leading-relaxed mb-2">
-          Реальный ИИ с характером и эмоциями. Помнит все ваши разговоры.
-          Реагирует живо — радуется, думает, серьёзничает.
-        </p>
-        <p className="font-mono text-cyan-400/40 text-xs tracking-wider mb-10">
-          ГОЛОСОВОЙ ВВОД · ПАМЯТЬ · 8 ЭМОЦИЙ · БЕЗ ОГРАНИЧЕНИЙ
-        </p>
-
-        <button onClick={() => setPage("chat")}
-          className="group relative px-12 py-4 rounded-2xl font-orbitron font-bold text-lg text-white transition-all hover:scale-105 active:scale-95 mb-6"
-          style={{
-            background: "linear-gradient(135deg, rgba(6,182,212,0.22), rgba(139,92,246,0.22))",
-            border: "1px solid rgba(6,182,212,0.55)",
-            boxShadow: "0 0 35px rgba(6,182,212,0.22), 0 0 70px rgba(139,92,246,0.1)",
-          }}>
-          <span className="flex items-center gap-3">
-            <Icon name="Zap" size={22} />
-            Начать разговор
-          </span>
-        </button>
-
-        {/* Mood selector */}
-        <div className="flex gap-2 flex-wrap justify-center mb-2">
-          {(Object.entries(MOOD_CONFIG) as [Mood, typeof MOOD_CONFIG.calm][]).map(([key, val]) => (
-            <button key={key} onClick={() => setMood(key)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-rajdhani font-semibold transition-all hover:scale-105"
-              style={{
-                background: mood === key ? `${val.color}20` : "rgba(255,255,255,0.03)",
-                border: `1px solid ${mood === key ? val.color : val.color + "28"}`,
-                color: mood === key ? val.color : "rgba(255,255,255,0.32)",
-                boxShadow: mood === key ? `0 0 12px ${val.glow}` : "none",
-              }}>
-              <span>{val.emoji}</span>
-              <span>{val.label}</span>
-            </button>
-          ))}
-        </div>
-        <div className="text-xs font-mono text-white/20">Выбери настроение Stefani перед разговором</div>
-      </section>
+      <HeroSection mood={mood} setMood={setMood} onStart={() => setPage("chat")} userName={userName} />
 
       {/* CAPABILITIES */}
       <section className="relative z-10 px-6 pb-16">
