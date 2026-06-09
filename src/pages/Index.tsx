@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
+import { useSpeech } from "@/hooks/useSpeech";
 
 const STEFANI_IMAGE = "https://cdn.poehali.dev/projects/eb4796b4-3ec9-42cb-87db-7dcd64d116d5/files/d9d0a338-db8b-4ee3-a7f1-b2571ce21cb8.jpg";
 const CHAT_API    = "https://functions.poehali.dev/0dd1813d-413c-4595-9a50-a307b6e38777";
@@ -87,12 +88,14 @@ function StefaniAvatar({
   emotion,
   size = 40,
   isTyping = false,
+  isSpeaking = false,
   moodColor,
   moodGlow,
 }: {
   emotion: Emotion;
   size?: number;
   isTyping?: boolean;
+  isSpeaking?: boolean;
   moodColor: string;
   moodGlow: string;
 }) {
@@ -112,13 +115,21 @@ function StefaniAvatar({
 
   return (
     <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+      {/* Звуковые волны при озвучке */}
+      {isSpeaking && (
+        <>
+          <div className="sound-wave-1 absolute inset-0 rounded-full" style={{ background: `${ec.pulse}30`, margin: -size * 0.08 }} />
+          <div className="sound-wave-2 absolute inset-0 rounded-full" style={{ background: `${ec.pulse}18`, margin: -size * 0.18 }} />
+          <div className="sound-wave-3 absolute inset-0 rounded-full" style={{ background: `${ec.pulse}0d`, margin: -size * 0.30 }} />
+        </>
+      )}
       {/* Аура эмоции */}
       <div
         className="absolute inset-0 rounded-full transition-all duration-700"
         style={{
           background: `radial-gradient(circle, ${ec.aura} 0%, transparent 70%)`,
-          transform: `scale(${isTyping ? 1.4 : ec.scale * 1.3})`,
-          animation: isTyping ? "pulse-glow 1s ease-in-out infinite" : undefined,
+          transform: `scale(${isTyping ? 1.4 : isSpeaking ? 1.5 : ec.scale * 1.3})`,
+          animation: isTyping || isSpeaking ? "pulse-glow 1s ease-in-out infinite" : undefined,
         }}
       />
       <img
@@ -126,10 +137,10 @@ function StefaniAvatar({
         alt="Stefani"
         className="relative rounded-full object-cover w-full h-full transition-all duration-500"
         style={{
-          border: `2px solid ${ec.pulse}`,
-          boxShadow: `0 0 ${isTyping ? 20 : 10}px ${ec.aura}`,
-          transform: `scale(${animating ? 0.85 : 1})`,
-          filter: animating ? "brightness(1.3)" : "none",
+          border: `2px solid ${isSpeaking ? ec.pulse : ec.pulse}`,
+          boxShadow: `0 0 ${isTyping || isSpeaking ? 24 : 10}px ${ec.aura}`,
+          transform: `scale(${animating ? 0.85 : isSpeaking ? 1.04 : 1})`,
+          filter: animating ? "brightness(1.3)" : isSpeaking ? "brightness(1.1) saturate(1.2)" : "none",
         }}
       />
       {/* Эмоция-бейдж */}
@@ -151,16 +162,12 @@ function StefaniAvatar({
   );
 }
 
-function EmotionBar({ emotion, color }: { emotion: Emotion; color: string }) {
+function EmotionBar({ emotion }: { emotion: Emotion }) {
   const ec = EMOTION_CONFIG[emotion];
   return (
     <div
       className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono transition-all duration-500"
-      style={{
-        background: `${ec.pulse}15`,
-        border: `1px solid ${ec.pulse}30`,
-        color: ec.pulse,
-      }}
+      style={{ background: `${ec.pulse}15`, border: `1px solid ${ec.pulse}30`, color: ec.pulse }}
     >
       <span className="text-sm">{ec.emoji}</span>
       <span>{ec.label}</span>
@@ -168,21 +175,65 @@ function EmotionBar({ emotion, color }: { emotion: Emotion; color: string }) {
   );
 }
 
+// Эквалайзер — анимированные полоски во время речи
+function Equalizer({ color, playing }: { color: string; playing: boolean }) {
+  if (!playing) return null;
+  return (
+    <div className="flex items-end gap-0.5 h-4">
+      {["eq-bar-1","eq-bar-2","eq-bar-3","eq-bar-4","eq-bar-5"].map((cls, i) => (
+        <div key={i} className={`${cls} rounded-sm`}
+          style={{ width: 3, height: "100%", background: color, opacity: 0.85, transformOrigin: "bottom" }} />
+      ))}
+    </div>
+  );
+}
+
+// Кнопка озвучки сообщения
+function SpeakButton({
+  text, emotion, color,
+  onSpeak, onStop, isCurrentlySpeaking,
+}: {
+  text: string; emotion?: Emotion; color: string;
+  onSpeak: (t: string, e?: string) => void;
+  onStop: () => void;
+  isCurrentlySpeaking: boolean;
+}) {
+  return (
+    <button
+      onClick={() => isCurrentlySpeaking ? onStop() : onSpeak(text, emotion)}
+      className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-mono transition-all hover:scale-105 active:scale-95"
+      title={isCurrentlySpeaking ? "Остановить" : "Озвучить"}
+      style={{
+        background: isCurrentlySpeaking ? `${color}25` : `${color}0d`,
+        border: `1px solid ${isCurrentlySpeaking ? color : color + "30"}`,
+        color: isCurrentlySpeaking ? color : color + "99",
+      }}
+    >
+      {isCurrentlySpeaking
+        ? <><Icon name="Square" size={10} /><span>стоп</span></>
+        : <><Icon name="Volume2" size={10} /><span>слушать</span></>
+      }
+    </button>
+  );
+}
+
 // ─── Главный компонент ────────────────────────────────
 
 export default function Index() {
-  const [page, setPage]       = useState<"home" | "chat">("home");
-  const [mood, setMood]       = useState<Mood>("calm");
+  const [page, setPage]         = useState<"home" | "chat">("home");
+  const [mood, setMood]         = useState<Mood>("calm");
   const [messages, setMessages] = useState<Message[]>([INIT_MESSAGE]);
   const [currentEmotion, setCurrentEmotion] = useState<Emotion>("neutral");
-  const [input, setInput]     = useState("");
+  const [input, setInput]       = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [error, setError]       = useState<string | null>(null);
   const [glitching, setGlitching] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  const [sessionId]           = useState(() => getSessionId());
-  const messagesEndRef        = useRef<HTMLDivElement>(null);
+  const [speakingMsgIdx, setSpeakingMsgIdx] = useState<number | null>(null);
+  const [sessionId]             = useState(() => getSessionId());
+  const messagesEndRef          = useRef<HTMLDivElement>(null);
 
+  const speech = useSpeech();
   const currentMood = MOOD_CONFIG[mood];
 
   // Загрузка истории при входе в чат
@@ -256,17 +307,22 @@ export default function Index() {
       const emotion: Emotion = (data.emotion as Emotion) || "neutral";
       setCurrentEmotion(emotion);
 
-      const withReply: Message[] = [
-        ...newMsgs,
-        {
-          role: "stefani",
-          text: data.reply,
-          time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
-          emotion,
-        },
-      ];
+      const replyMsg: Message = {
+        role: "stefani",
+        text: data.reply,
+        time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
+        emotion,
+      };
+      const withReply: Message[] = [...newMsgs, replyMsg];
       setMessages(withReply);
       saveHistory(withReply, mood);
+
+      // Автоозвучка если включена
+      if (speech.autoSpeak) {
+        const idx = withReply.length - 1;
+        setSpeakingMsgIdx(idx);
+        speech.speak(data.reply, emotion);
+      }
     } catch {
       setError("Нет связи с сервером.");
       setCurrentEmotion("serious");
@@ -274,6 +330,21 @@ export default function Index() {
       setIsTyping(false);
     }
   };
+
+  const handleSpeak = (text: string, emotion: Emotion | undefined, idx: number) => {
+    if (speakingMsgIdx === idx && speech.isSpeaking) {
+      speech.stop();
+      setSpeakingMsgIdx(null);
+    } else {
+      setSpeakingMsgIdx(idx);
+      speech.speak(text, emotion);
+    }
+  };
+
+  // Сбрасываем speakingMsgIdx когда речь завершилась
+  useEffect(() => {
+    if (!speech.isSpeaking) setSpeakingMsgIdx(null);
+  }, [speech.isSpeaking]);
 
   const clearHistory = () => {
     localStorage.removeItem("stefani_session");
@@ -302,11 +373,12 @@ export default function Index() {
             <Icon name="ArrowLeft" size={20} />
           </button>
 
-          {/* Аватар с живой эмоцией */}
+          {/* Аватар с живой эмоцией + волны при речи */}
           <StefaniAvatar
             emotion={isTyping ? "thinking" : currentEmotion}
             size={44}
             isTyping={isTyping}
+            isSpeaking={speech.isSpeaking}
             moodColor={currentMood.color}
             moodGlow={currentMood.glow}
           />
@@ -319,15 +391,32 @@ export default function Index() {
               >
                 STEFANI
               </span>
-              <EmotionBar emotion={isTyping ? "thinking" : currentEmotion} color={currentMood.color} />
+              <EmotionBar emotion={isTyping ? "thinking" : currentEmotion} />
+              <Equalizer color={currentMood.color} playing={speech.isSpeaking} />
             </div>
             <div className="text-xs text-cyan-400/45 font-mono">
-              {isTyping ? "обрабатывает запрос..." : "ОНЛАЙН · память активна"}
+              {speech.isSpeaking ? "говорит..." : isTyping ? "обрабатывает..." : "ОНЛАЙН · память активна"}
             </div>
           </div>
 
-          {/* Mood + очистить */}
+          {/* Авто-озвучка + Mood + очистить */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Кнопка авто-озвучки */}
+            {speech.isSupported && (
+              <button
+                onClick={() => { speech.setAutoSpeak(!speech.autoSpeak); if (speech.isSpeaking) speech.stop(); }}
+                title={speech.autoSpeak ? "Выключить автоозвучку" : "Включить автоозвучку"}
+                className="w-7 h-7 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                style={{
+                  background: speech.autoSpeak ? "rgba(6,182,212,0.25)" : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${speech.autoSpeak ? "rgba(6,182,212,0.7)" : "rgba(255,255,255,0.15)"}`,
+                  color: speech.autoSpeak ? "#06b6d4" : "rgba(255,255,255,0.3)",
+                  boxShadow: speech.autoSpeak ? "0 0 8px rgba(6,182,212,0.4)" : "none",
+                }}
+              >
+                <Icon name={speech.autoSpeak ? "Volume2" : "VolumeX"} size={13} />
+              </button>
+            )}
             {(Object.entries(MOOD_CONFIG) as [Mood, typeof MOOD_CONFIG.calm][]).map(([key, val]) => (
               <button
                 key={key}
@@ -369,6 +458,7 @@ export default function Index() {
                   <StefaniAvatar
                     emotion={emotion}
                     size={36}
+                    isSpeaking={speakingMsgIdx === i && speech.isSpeaking}
                     moodColor={currentMood.color}
                     moodGlow={currentMood.glow}
                   />
@@ -380,9 +470,11 @@ export default function Index() {
                       msg.role === "stefani"
                         ? {
                             background: `linear-gradient(135deg, ${ec.pulse}12, ${ec.pulse}06)`,
-                            border: `1px solid ${ec.pulse}28`,
+                            border: `1px solid ${speakingMsgIdx === i && speech.isSpeaking ? ec.pulse + "70" : ec.pulse + "28"}`,
                             color: "#e2f8ff",
-                            boxShadow: `0 2px 16px ${ec.aura}`,
+                            boxShadow: speakingMsgIdx === i && speech.isSpeaking
+                              ? `0 0 20px ${ec.aura}, 0 2px 16px ${ec.aura}`
+                              : `0 2px 16px ${ec.aura}`,
                           }
                         : {
                             background: "linear-gradient(135deg, rgba(139,92,246,0.2), rgba(6,182,212,0.1))",
@@ -393,7 +485,19 @@ export default function Index() {
                   >
                     {msg.text}
                   </div>
-                  <span className="text-xs text-white/20 font-mono px-1">{msg.time}</span>
+                  <div className="flex items-center gap-2 px-1">
+                    <span className="text-xs text-white/20 font-mono">{msg.time}</span>
+                    {msg.role === "stefani" && speech.isSupported && (
+                      <SpeakButton
+                        text={msg.text}
+                        emotion={emotion}
+                        color={ec.pulse}
+                        onSpeak={(t, e) => handleSpeak(t, e as Emotion, i)}
+                        onStop={() => { speech.stop(); setSpeakingMsgIdx(null); }}
+                        isCurrentlySpeaking={speakingMsgIdx === i && speech.isSpeaking}
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
             );
