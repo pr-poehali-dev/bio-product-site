@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { useSpeech } from "@/hooks/useSpeech";
+import { useMicrophone } from "@/hooks/useMicrophone";
 
 const STEFANI_IMAGE = "https://cdn.poehali.dev/projects/eb4796b4-3ec9-42cb-87db-7dcd64d116d5/files/d9d0a338-db8b-4ee3-a7f1-b2571ce21cb8.jpg";
 const CHAT_API    = "https://functions.poehali.dev/0dd1813d-413c-4595-9a50-a307b6e38777";
@@ -236,6 +237,11 @@ export default function Index() {
   const speech = useSpeech();
   const currentMood = MOOD_CONFIG[mood];
 
+  const mic = useMicrophone(
+    (text) => { setInput(""); sendMessageWithText(text); },
+    (interim) => setInput(interim)
+  );
+
   // Загрузка истории при входе в чат
   useEffect(() => {
     if (page !== "chat" || historyLoaded) return;
@@ -278,12 +284,10 @@ export default function Index() {
     return () => clearInterval(iv);
   }, []);
 
-  const sendMessage = async (text?: string) => {
-    const msg = (text || input).trim();
-    if (!msg || isTyping) return;
-
+  const sendMessageWithText = async (msg: string) => {
+    if (!msg.trim() || isTyping) return;
     const time = new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
-    const newMsgs: Message[] = [...messages, { role: "user", text: msg, time, emotion: "neutral" }];
+    const newMsgs: Message[] = [...messages, { role: "user", text: msg.trim(), time, emotion: "neutral" }];
     setMessages(newMsgs);
     setInput("");
     setIsTyping(true);
@@ -297,38 +301,26 @@ export default function Index() {
         body: JSON.stringify({ messages: newMsgs, mood }),
       });
       const data = await res.json();
-
-      if (!res.ok) {
-        setError(`Ошибка соединения (${res.status}). Попробуй ещё раз.`);
-        setCurrentEmotion("neutral");
-        return;
-      }
-
+      if (!res.ok) { setError(`Ошибка соединения (${res.status}). Попробуй ещё раз.`); setCurrentEmotion("neutral"); return; }
       const emotion: Emotion = (data.emotion as Emotion) || "neutral";
       setCurrentEmotion(emotion);
-
-      const replyMsg: Message = {
-        role: "stefani",
-        text: data.reply,
-        time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
-        emotion,
-      };
+      const replyMsg: Message = { role: "stefani", text: data.reply, time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }), emotion };
       const withReply: Message[] = [...newMsgs, replyMsg];
       setMessages(withReply);
       saveHistory(withReply, mood);
-
-      // Автоозвучка если включена
-      if (speech.autoSpeak) {
-        const idx = withReply.length - 1;
-        setSpeakingMsgIdx(idx);
-        speech.speak(data.reply, emotion);
-      }
+      if (speech.autoSpeak) { setSpeakingMsgIdx(withReply.length - 1); speech.speak(data.reply, emotion); }
     } catch {
-      setError("Нет связи с сервером.");
-      setCurrentEmotion("serious");
+      setError("Нет связи с сервером."); setCurrentEmotion("serious");
     } finally {
       setIsTyping(false);
     }
+  };
+
+  const handleSend = (text?: string) => {
+    const msg = (text || input).trim();
+    if (!msg) return;
+    setInput("");
+    sendMessageWithText(msg);
   };
 
   const handleSpeak = (text: string, emotion: Emotion | undefined, idx: number) => {
@@ -352,7 +344,12 @@ export default function Index() {
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  };
+
+  const toggleMic = () => {
+    if (mic.isListening) mic.stopListening();
+    else { speech.stop(); mic.startListening(); }
   };
 
   const particles = Array.from({ length: 18 }, (_, i) => ({ left: `${(i / 18) * 100}%`, bottom: "0" }));
@@ -554,10 +551,34 @@ export default function Index() {
             }}
           >
             <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKey}
-              placeholder="Спроси Stefani всё что угодно..." rows={1} disabled={isTyping}
-              className="flex-1 bg-transparent text-white placeholder-white/20 resize-none outline-none font-rajdhani text-sm leading-relaxed disabled:opacity-50"
+              placeholder={mic.isListening ? "Слушаю... говори!" : "Спроси Stefani всё что угодно..."}
+              rows={1} disabled={isTyping || mic.isListening}
+              className="flex-1 bg-transparent text-white placeholder-white/20 resize-none outline-none font-rajdhani text-sm leading-relaxed disabled:opacity-50 transition-all"
               style={{ maxHeight: 120 }} />
-            <button onClick={() => sendMessage()} disabled={!input.trim() || isTyping}
+
+            {/* Кнопка микрофона */}
+            {mic.isSupported && (
+              <button
+                onClick={toggleMic}
+                disabled={isTyping}
+                title={mic.isListening ? "Остановить запись" : "Говорить"}
+                className="w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-110 disabled:opacity-30 flex-shrink-0"
+                style={{
+                  background: mic.isListening
+                    ? "linear-gradient(135deg, #ef4444, #f97316)"
+                    : "rgba(255,255,255,0.06)",
+                  border: mic.isListening ? "1px solid rgba(239,68,68,0.6)" : "1px solid rgba(255,255,255,0.1)",
+                  boxShadow: mic.isListening ? "0 0 16px rgba(239,68,68,0.5)" : "none",
+                  color: mic.isListening ? "#fff" : "rgba(255,255,255,0.4)",
+                  animation: mic.isListening ? "pulse-glow 1s ease-in-out infinite" : "none",
+                }}
+              >
+                <Icon name={mic.isListening ? "MicOff" : "Mic"} size={16} />
+              </button>
+            )}
+
+            {/* Кнопка отправки */}
+            <button onClick={() => handleSend()} disabled={!input.trim() || isTyping || mic.isListening}
               className="w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-110 disabled:opacity-30 flex-shrink-0"
               style={{
                 background: input.trim() && !isTyping ? `linear-gradient(135deg, ${currentMood.color}, #8b5cf6)` : "rgba(255,255,255,0.07)",
@@ -567,9 +588,29 @@ export default function Index() {
               <Icon name="Send" size={16} />
             </button>
           </div>
+
+          {/* Статус микрофона */}
+          {mic.isListening && (
+            <div className="flex items-center justify-center gap-2 mt-2">
+              <div className="flex gap-1 items-end h-4">
+                {["eq-bar-1","eq-bar-2","eq-bar-3","eq-bar-4","eq-bar-5"].map((cls, i) => (
+                  <div key={i} className={`${cls} rounded-sm`}
+                    style={{ width: 3, height: "100%", background: "#ef4444", opacity: 0.8, transformOrigin: "bottom" }} />
+                ))}
+              </div>
+              <span className="text-xs font-mono text-red-400">Говори — Stefani слушает...</span>
+            </div>
+          )}
+          {mic.error && (
+            <div className="text-center mt-1">
+              <span className="text-xs font-mono text-red-400/70">{mic.error}</span>
+            </div>
+          )}
+          {!mic.isListening && !mic.error && (
           <div className="text-center mt-1">
-            <span className="text-xs font-mono text-white/12">Enter — отправить · Shift+Enter — новая строка</span>
+            <span className="text-xs font-mono text-white/12">Enter — отправить · 🎤 — голос</span>
           </div>
+          )}
         </div>
       </div>
     );
@@ -600,7 +641,7 @@ export default function Index() {
           <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full"
             style={{ background: "rgba(6,182,212,0.08)", border: "1px solid rgba(6,182,212,0.18)" }}>
             <Icon name="Brain" size={12} className="text-cyan-400" />
-            <span className="text-xs font-mono text-cyan-400">GPT-4o · Без ключей</span>
+            <span className="text-xs font-mono text-cyan-400">Искусственный интеллект</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -645,7 +686,7 @@ export default function Index() {
           Реагирует живо — радуется, думает, серьёзничает.
         </p>
         <p className="font-mono text-cyan-400/40 text-xs tracking-wider mb-10">
-          ПАМЯТЬ МЕЖДУ СЕССИЯМИ · 8 ЭМОЦИЙ · БЕЗ ОГРАНИЧЕНИЙ
+          ГОЛОСОВОЙ ВВОД · ПАМЯТЬ · 8 ЭМОЦИЙ · БЕЗ ОГРАНИЧЕНИЙ
         </p>
 
         <button onClick={() => setPage("chat")}
@@ -732,7 +773,7 @@ export default function Index() {
           </button>
         </div>
         <div className="mt-10 font-mono text-white/12 text-xs tracking-widest">
-          STEFANI v4.0 · ПАМЯТЬ + ЭМОЦИИ · {new Date().getFullYear()}
+          STEFANI v5.0 · ГОЛОС · ПАМЯТЬ · ЭМОЦИИ · {new Date().getFullYear()}
         </div>
       </section>
     </div>
