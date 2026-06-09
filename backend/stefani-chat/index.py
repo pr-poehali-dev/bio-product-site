@@ -112,6 +112,35 @@ def try_huggingface(api_messages: list) -> str | None:
         return None
 
 
+def detect_emotion(text: str, mood: str) -> str:
+    """Определяет эмоцию Stefani по тексту ответа и текущему настроению."""
+    t = text.lower()
+
+    if mood == "intense":
+        return "intense"
+    if mood == "playful":
+        if any(w in t for w in ["!", "хм", "интересно", "забавно", "смешн", "😏", "😄"]):
+            return "playful"
+
+    if any(w in t for w in ["отлично", "прекрасно", "замечательно", "рад", "приятно", "нравится", "люблю"]):
+        return "happy"
+    if any(w in t for w in ["понимаю", "сочувств", "жаль", "сложно", "трудно", "непросто"]):
+        return "empathetic"
+    if any(w in t for w in ["внимание", "важно", "критично", "осторожно", "предупрежд", "опасн"]):
+        return "serious"
+    if any(w in t for w in ["интересно", "любопытно", "интригует", "захватывает", "удивительно"]):
+        return "curious"
+    if any(w in t for w in ["думаю", "анализирую", "рассматриваю", "изучаю", "вычисляю"]):
+        return "thinking"
+    if any(w in t for w in ["код", "```", "def ", "function", "import", "class ", "алгоритм"]):
+        return "focused"
+    if mood == "calm":
+        return "calm"
+    if mood == "focused":
+        return "focused"
+    return "neutral"
+
+
 def smart_fallback(user_message: str, mood: str) -> str:
     """Умный локальный ответ если все внешние провайдеры недоступны."""
     msg_lower = user_message.lower()
@@ -194,8 +223,10 @@ def handler(event: dict, context) -> dict:
         reply = smart_fallback(last_user_text, mood)
         model_used = "stefani-local"
 
+    emotion = detect_emotion(reply, mood)
+
     return {
         "statusCode": 200,
         "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-        "body": json.dumps({"reply": reply, "model": model_used}),
+        "body": json.dumps({"reply": reply, "model": model_used, "emotion": emotion}),
     }
