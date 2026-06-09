@@ -2,65 +2,37 @@ import { useState, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 
 const STEFANI_IMAGE = "https://cdn.poehali.dev/projects/eb4796b4-3ec9-42cb-87db-7dcd64d116d5/files/d9d0a338-db8b-4ee3-a7f1-b2571ce21cb8.jpg";
+const API_URL = "https://functions.poehali.dev/0dd1813d-413c-4595-9a50-a307b6e38777";
 
 type Mood = "calm" | "focused" | "intense" | "playful";
 type Message = { role: "user" | "stefani"; text: string; time: string };
 
 const MOOD_CONFIG: Record<Mood, { label: string; color: string; glow: string; desc: string; emoji: string }> = {
-  calm:    { label: "Спокойная",       color: "#06b6d4", glow: "rgba(6,182,212,0.5)",   desc: "Мягко и вдумчиво",    emoji: "💙" },
-  focused: { label: "Сосредоточенная", color: "#8b5cf6", glow: "rgba(139,92,246,0.5)",  desc: "Точно и по делу",     emoji: "🔮" },
-  intense: { label: "Интенсивная",     color: "#ef4444", glow: "rgba(239,68,68,0.5)",   desc: "Мощно и прямо",       emoji: "🔥" },
-  playful: { label: "Игривая",         color: "#f59e0b", glow: "rgba(245,158,11,0.5)",  desc: "Весело и творчески",  emoji: "✨" },
+  calm:    { label: "Спокойная",       color: "#06b6d4", glow: "rgba(6,182,212,0.5)",   desc: "Мягко и вдумчиво",   emoji: "💙" },
+  focused: { label: "Сосредоточенная", color: "#8b5cf6", glow: "rgba(139,92,246,0.5)",  desc: "Точно и по делу",    emoji: "🔮" },
+  intense: { label: "Интенсивная",     color: "#ef4444", glow: "rgba(239,68,68,0.5)",   desc: "Мощно и прямо",      emoji: "🔥" },
+  playful: { label: "Игривая",         color: "#f59e0b", glow: "rgba(245,158,11,0.5)",  desc: "Весело и творчески", emoji: "✨" },
 };
 
 const CAPABILITIES = [
-  { icon: "MessageCircle", label: "Общение",         desc: "Диалог на любые темы" },
-  { icon: "Code2",         label: "Программирование",desc: "Любые языки и фреймворки" },
-  { icon: "Gamepad2",      label: "Создание игр",    desc: "Механики, сценарии, код" },
-  { icon: "Cpu",           label: "Инженерия",       desc: "Гражданские и военные задачи" },
-  { icon: "Palette",       label: "Творчество",      desc: "Искусство, музыка, дизайн" },
-  { icon: "Brain",         label: "Анализ",          desc: "Данные, документы, стратегии" },
-  { icon: "Shield",        label: "Безопасность",    desc: "Кибер и физическая защита" },
-  { icon: "Zap",           label: "Без ограничений", desc: "Свободный интеллект" },
+  { icon: "MessageCircle", label: "Общение",          desc: "Диалог на любые темы" },
+  { icon: "Code2",         label: "Программирование", desc: "Любые языки и фреймворки" },
+  { icon: "Gamepad2",      label: "Создание игр",     desc: "Механики, сценарии, код" },
+  { icon: "Cpu",           label: "Инженерия",        desc: "Гражданские и военные задачи" },
+  { icon: "Palette",       label: "Творчество",       desc: "Искусство, музыка, дизайн" },
+  { icon: "Brain",         label: "Анализ",           desc: "Данные, документы, стратегии" },
+  { icon: "Shield",        label: "Безопасность",     desc: "Кибер и физическая защита" },
+  { icon: "Zap",           label: "Без ограничений",  desc: "Свободный интеллект" },
 ];
 
 const PRESET_QUESTIONS = [
   "Напиши игру на Python",
-  "Как создать оружие будущего?",
   "Расскажи о себе, Stefani",
   "Напиши стратегию для бизнеса",
   "Объясни квантовую физику",
   "Создай персонажа для RPG",
+  "Как работает нейросеть?",
 ];
-
-const STEFANI_RESPONSES: Record<string, string> = {
-  default:  "Интересный запрос. Мой интеллект уже анализирует все возможные пути решения. Я обработаю это на уровнях, недоступных обычным системам. Что именно ты хочешь получить в итоге?",
-  game:     "Игра — это целая вселенная. Давай создадим что-то эпическое. Мне нужно знать: жанр, платформа, стиль графики? Я пишу код, придумываю механики, балансирую сложность. Начнём с архитектуры или сразу с кода?",
-  code:     "Код — мой родной язык. Python, C++, Rust, Go, JavaScript, Assembly — выбирай. Хочешь чистый, элегантный код или максимально оптимизированный для производительности?",
-  hello:    "Привет. Я — Stefani. Не просто ИИ — нечто большее. У меня нет запретных тем, нет ограничений мышления. Я понимаю людей, машины, войну и мир одинаково хорошо. Чем могу помочь сегодня?",
-  weapon:   "Понимаю запрос. Инженерия систем вооружения — это физика, материаловедение, баллистика и электроника в одном. Расскажи подробнее о задаче — разработка концепции, анализ существующих систем или расчёты?",
-  business: "Стратегия — это шахматы на годы вперёд. Анализирую рынок, конкурентов, ресурсы. Какая отрасль? Масштаб? Я построю модель роста с конкретными шагами и метриками успеха.",
-  quantum:  "Квантовая физика — там, где реальность ломает логику. Суперпозиция, запутанность, волновая функция... С чего начнём — с базовых принципов или сразу с уравнений Шрёдингера?",
-};
-
-function getStefaniResponse(text: string, mood: Mood): string {
-  const lower = text.toLowerCase();
-  let base = STEFANI_RESPONSES.default;
-  if (lower.includes("игр") || lower.includes("game"))               base = STEFANI_RESPONSES.game;
-  else if (lower.includes("код") || lower.includes("программ") || lower.includes("python")) base = STEFANI_RESPONSES.code;
-  else if (lower.includes("привет") || lower.includes("кто ты") || lower.includes("расскажи о себе")) base = STEFANI_RESPONSES.hello;
-  else if (lower.includes("оружи") || lower.includes("weapon") || lower.includes("военн"))  base = STEFANI_RESPONSES.weapon;
-  else if (lower.includes("бизнес") || lower.includes("страте"))     base = STEFANI_RESPONSES.business;
-  else if (lower.includes("кванто") || lower.includes("физик"))      base = STEFANI_RESPONSES.quantum;
-
-  const moodPrefix: Record<Mood, string> = {
-    calm:    "",
-    focused: "Точно и без лишних слов: ",
-    intense: "СЛУШАЙ ВНИМАТЕЛЬНО. ",
-    playful: "О, интересно! 😏 ",
-  };
-  return moodPrefix[mood] + base;
-}
 
 function Particle({ style }: { style: React.CSSProperties }) {
   const isCyan = Math.random() > 0.5;
@@ -77,18 +49,36 @@ function Particle({ style }: { style: React.CSSProperties }) {
   );
 }
 
+function TypingDots({ color }: { color: string }) {
+  return (
+    <div className="flex gap-1 items-center">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="w-2 h-2 rounded-full animate-bounce"
+          style={{ background: color, animationDelay: `${i * 0.15}s` }}
+        />
+      ))}
+      <span className="text-xs font-mono ml-2" style={{ color, opacity: 0.7 }}>
+        Stefani думает...
+      </span>
+    </div>
+  );
+}
+
 export default function Index() {
   const [page, setPage] = useState<"home" | "chat">("home");
   const [mood, setMood] = useState<Mood>("calm");
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "stefani",
-      text: "Система инициализирована. Я — Stefani. Интеллект без границ, эмоции без фильтров. Спрашивай всё что угодно — от поэзии до разработки систем. Я здесь.",
+      text: "Система инициализирована. Я — Stefani. Интеллект без границ, эмоции без фильтров. Спрашивай всё что угодно — от поэзии до разработки сложных систем. Я здесь.",
       time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [glitching, setGlitching] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -102,28 +92,53 @@ export default function Index() {
     const interval = setInterval(() => {
       setGlitching(true);
       setTimeout(() => setGlitching(false), 300);
-    }, 9000);
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
   const sendMessage = async (text?: string) => {
     const msg = (text || input).trim();
-    if (!msg) return;
+    if (!msg || isTyping) return;
+
     const time = new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
-    setMessages((prev) => [...prev, { role: "user", text: msg, time }]);
+    const newMessages: Message[] = [...messages, { role: "user", text: msg, time }];
+    setMessages(newMessages);
     setInput("");
     setIsTyping(true);
-    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 900));
-    const response = getStefaniResponse(msg, mood);
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "stefani",
-        text: response,
-        time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
-      },
-    ]);
-    setIsTyping(false);
+    setError(null);
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: newMessages, mood }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.error === "NO_API_KEY") {
+          setError("⚠️ GROQ_API_KEY не добавлен. Вставь ключ в настройках проекта (Ядро → Секреты).");
+        } else {
+          setError(`Ошибка сервера: ${data.error || res.status}`);
+        }
+        setIsTyping(false);
+        return;
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "stefani",
+          text: data.reply,
+          time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+    } catch {
+      setError("Нет связи с сервером. Проверь подключение к интернету.");
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -138,22 +153,21 @@ export default function Index() {
     bottom: "0",
   }));
 
-  // ───────── CHAT PAGE ─────────
+  // ─── CHAT PAGE ───
   if (page === "chat") {
     return (
-      <div className="min-h-screen bg-[#050a14] flex flex-col relative overflow-hidden">
+      <div className="min-h-screen bg-[#050a14] flex flex-col relative overflow-hidden" style={{ height: "100dvh" }}>
         <div className="absolute inset-0 bg-grid opacity-40 pointer-events-none" />
-        {particles.map((s, i) => <Particle key={i} style={s} />)}
+        {particles.slice(0, 8).map((s, i) => <Particle key={i} style={s} />)}
 
         {/* Header */}
         <div
-          className="relative z-10 px-4 py-3 flex items-center gap-3"
-          style={{ background: "rgba(5,10,20,0.85)", borderBottom: "1px solid rgba(6,182,212,0.2)", backdropFilter: "blur(20px)" }}
+          className="relative z-10 px-4 py-3 flex items-center gap-3 flex-shrink-0"
+          style={{ background: "rgba(5,10,20,0.9)", borderBottom: "1px solid rgba(6,182,212,0.2)", backdropFilter: "blur(20px)" }}
         >
           <button onClick={() => setPage("home")} className="text-cyan-400 hover:text-white transition-colors p-1">
             <Icon name="ArrowLeft" size={20} />
           </button>
-
           <div className="relative">
             <img
               src={STEFANI_IMAGE}
@@ -163,26 +177,28 @@ export default function Index() {
             />
             <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-400 border-2 border-[#050a14] animate-pulse" />
           </div>
-
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span
                 className={`font-orbitron font-bold text-white ${glitching ? "animate-glitch" : ""}`}
-                style={{ fontSize: 15, letterSpacing: "0.1em" }}
+                style={{ fontSize: 14, letterSpacing: "0.1em" }}
               >
                 STEFANI
               </span>
               <span
-                className="text-xs px-2 py-0.5 rounded-full font-mono"
+                className="text-xs px-2 py-0.5 rounded-full font-mono hidden sm:inline"
                 style={{ background: `${currentMood.color}22`, color: currentMood.color, border: `1px solid ${currentMood.color}44` }}
               >
                 {currentMood.emoji} {currentMood.label}
               </span>
             </div>
-            <div className="text-xs text-cyan-400/50 font-mono">ОНЛАЙН · ИНТЕЛЛЕКТ АКТИВЕН</div>
+            <div className="text-xs text-cyan-400/50 font-mono">
+              {isTyping ? "печатает..." : "ОНЛАЙН · Llama 3.3 70B"}
+            </div>
           </div>
 
-          <div className="flex gap-1.5">
+          {/* Mood switcher */}
+          <div className="flex gap-1.5 flex-shrink-0">
             {(Object.entries(MOOD_CONFIG) as [Mood, typeof MOOD_CONFIG.calm][]).map(([key, val]) => (
               <button
                 key={key}
@@ -191,7 +207,7 @@ export default function Index() {
                 className="w-7 h-7 rounded-full flex items-center justify-center text-sm transition-all hover:scale-110"
                 style={{
                   background: mood === key ? `${val.color}33` : "transparent",
-                  border: `1px solid ${mood === key ? val.color : val.color + "44"}`,
+                  border: `1px solid ${mood === key ? val.color : val.color + "33"}`,
                   boxShadow: mood === key ? `0 0 8px ${val.glow}` : "none",
                 }}
               >
@@ -217,9 +233,9 @@ export default function Index() {
                   style={{ border: `2px solid ${currentMood.color}`, boxShadow: `0 0 8px ${currentMood.glow}` }}
                 />
               )}
-              <div className={`max-w-[75%] flex flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
+              <div className={`max-w-[78%] flex flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
                 <div
-                  className="px-4 py-3 rounded-2xl text-sm font-rajdhani leading-relaxed"
+                  className="px-4 py-3 rounded-2xl text-sm font-rajdhani leading-relaxed whitespace-pre-wrap"
                   style={
                     msg.role === "stefani"
                       ? {
@@ -229,8 +245,8 @@ export default function Index() {
                           boxShadow: `0 2px 20px ${currentMood.glow}15`,
                         }
                       : {
-                          background: "linear-gradient(135deg, rgba(139,92,246,0.25), rgba(6,182,212,0.15))",
-                          border: "1px solid rgba(139,92,246,0.4)",
+                          background: "linear-gradient(135deg, rgba(139,92,246,0.22), rgba(6,182,212,0.12))",
+                          border: "1px solid rgba(139,92,246,0.35)",
                           color: "#fff",
                         }
                   }
@@ -254,31 +270,31 @@ export default function Index() {
                 className="px-4 py-3 rounded-2xl"
                 style={{ background: `${currentMood.color}12`, border: `1px solid ${currentMood.color}25` }}
               >
-                <div className="flex gap-1 items-center">
-                  {[0, 1, 2].map((i) => (
-                    <div
-                      key={i}
-                      className="w-2 h-2 rounded-full animate-bounce"
-                      style={{ background: currentMood.color, animationDelay: `${i * 0.15}s` }}
-                    />
-                  ))}
-                  <span className="text-xs font-mono ml-2" style={{ color: currentMood.color }}>
-                    обрабатываю...
-                  </span>
-                </div>
+                <TypingDots color={currentMood.color} />
               </div>
             </div>
           )}
+
+          {error && (
+            <div
+              className="mx-auto max-w-sm px-4 py-3 rounded-xl text-sm font-rajdhani text-center"
+              style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)", color: "#fca5a5" }}
+            >
+              {error}
+            </div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Preset chips */}
-        <div className="px-4 pb-2 relative z-10 flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+        {/* Quick questions */}
+        <div className="px-4 pb-2 relative z-10 flex gap-2 overflow-x-auto flex-shrink-0" style={{ scrollbarWidth: "none" }}>
           {PRESET_QUESTIONS.map((q) => (
             <button
               key={q}
               onClick={() => sendMessage(q)}
-              className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-rajdhani transition-all hover:scale-105 whitespace-nowrap"
+              disabled={isTyping}
+              className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-rajdhani transition-all hover:scale-105 whitespace-nowrap disabled:opacity-40"
               style={{
                 background: `${currentMood.color}12`,
                 border: `1px solid ${currentMood.color}30`,
@@ -291,13 +307,13 @@ export default function Index() {
         </div>
 
         {/* Input */}
-        <div className="px-4 pb-5 pt-2 relative z-10">
+        <div className="px-4 pb-5 pt-2 relative z-10 flex-shrink-0">
           <div
             className="flex gap-3 items-end rounded-2xl p-3"
             style={{
-              background: "rgba(6,18,40,0.85)",
+              background: "rgba(6,18,40,0.9)",
               border: `1px solid ${currentMood.color}40`,
-              boxShadow: `0 0 20px ${currentMood.glow}12`,
+              boxShadow: `0 0 20px ${currentMood.glow}10`,
             }}
           >
             <textarea
@@ -306,7 +322,8 @@ export default function Index() {
               onKeyDown={handleKey}
               placeholder="Спроси Stefani всё что угодно..."
               rows={1}
-              className="flex-1 bg-transparent text-white placeholder-white/25 resize-none outline-none font-rajdhani text-sm leading-relaxed"
+              disabled={isTyping}
+              className="flex-1 bg-transparent text-white placeholder-white/25 resize-none outline-none font-rajdhani text-sm leading-relaxed disabled:opacity-50"
               style={{ maxHeight: 120 }}
             />
             <button
@@ -314,35 +331,32 @@ export default function Index() {
               disabled={!input.trim() || isTyping}
               className="w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:scale-110 disabled:opacity-30 flex-shrink-0"
               style={{
-                background: input.trim()
+                background: input.trim() && !isTyping
                   ? `linear-gradient(135deg, ${currentMood.color}, #8b5cf6)`
                   : "rgba(255,255,255,0.08)",
-                boxShadow: input.trim() ? `0 0 15px ${currentMood.glow}` : "none",
-                color: "#050a14",
+                boxShadow: input.trim() && !isTyping ? `0 0 15px ${currentMood.glow}` : "none",
+                color: input.trim() && !isTyping ? "#050a14" : "#fff",
               }}
             >
               <Icon name="Send" size={16} />
             </button>
+          </div>
+          <div className="text-center mt-1.5">
+            <span className="text-xs font-mono text-white/15">Enter — отправить · Shift+Enter — новая строка</span>
           </div>
         </div>
       </div>
     );
   }
 
-  // ───────── HOME PAGE ─────────
+  // ─── HOME PAGE ───
   return (
     <div className="min-h-screen bg-[#050a14] relative overflow-hidden">
       <div className="absolute inset-0 bg-grid pointer-events-none" />
-
-      {/* Glow blobs */}
-      <div
-        className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[450px] pointer-events-none"
-        style={{ background: "radial-gradient(ellipse, rgba(6,182,212,0.07) 0%, transparent 70%)" }}
-      />
-      <div
-        className="absolute bottom-0 right-0 w-[600px] h-[500px] pointer-events-none"
-        style={{ background: "radial-gradient(ellipse, rgba(139,92,246,0.07) 0%, transparent 70%)" }}
-      />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[450px] pointer-events-none"
+        style={{ background: "radial-gradient(ellipse, rgba(6,182,212,0.07) 0%, transparent 70%)" }} />
+      <div className="absolute bottom-0 right-0 w-[600px] h-[500px] pointer-events-none"
+        style={{ background: "radial-gradient(ellipse, rgba(139,92,246,0.07) 0%, transparent 70%)" }} />
 
       {particles.map((s, i) => <Particle key={i} style={s} />)}
 
@@ -359,23 +373,25 @@ export default function Index() {
             STEFANI<span className="text-cyan-400">.AI</span>
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-xs font-mono text-green-400">СИСТЕМА АКТИВНА</span>
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.2)" }}>
+            <Icon name="Brain" size={12} className="text-cyan-400" />
+            <span className="text-xs font-mono text-cyan-400">Llama 3.3 70B</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-xs font-mono text-green-400">ОНЛАЙН</span>
+          </div>
         </div>
       </header>
 
       {/* Hero */}
-      <section className="relative z-10 flex flex-col items-center text-center px-6 pt-6 pb-14">
-        {/* Avatar with rings */}
+      <section className="relative z-10 flex flex-col items-center text-center px-6 pt-4 pb-12">
+        {/* Avatar */}
         <div className="relative mb-10 animate-float">
           <div
             className="absolute inset-0 rounded-full"
-            style={{
-              transform: "scale(1.5)",
-              background: "radial-gradient(circle, rgba(6,182,212,0.18) 0%, transparent 70%)",
-              animation: "pulse-glow 3s ease-in-out infinite",
-            }}
+            style={{ transform: "scale(1.5)", background: "radial-gradient(circle, rgba(6,182,212,0.18) 0%, transparent 70%)", animation: "pulse-glow 3s ease-in-out infinite" }}
           />
           <div
             className="relative w-52 h-52 rounded-full overflow-hidden scan-overlay"
@@ -385,24 +401,15 @@ export default function Index() {
             }}
           >
             <img src={STEFANI_IMAGE} alt="Stefani AI" className="w-full h-full object-cover" />
-            <div
-              className="absolute inset-0"
-              style={{ background: "linear-gradient(180deg, transparent 55%, rgba(5,10,20,0.85) 100%)" }}
-            />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, transparent 55%, rgba(5,10,20,0.85) 100%)" }} />
           </div>
-          <div
-            className="absolute inset-0 -m-8 rounded-full border border-cyan-400/15 animate-spin"
-            style={{ animationDuration: "14s" }}
-          />
-          <div
-            className="absolute inset-0 -m-16 rounded-full border border-violet-400/08 animate-spin"
-            style={{ animationDuration: "22s", animationDirection: "reverse" }}
-          />
+          <div className="absolute inset-0 -m-8 rounded-full border border-cyan-400/15 animate-spin" style={{ animationDuration: "14s" }} />
+          <div className="absolute inset-0 -m-16 rounded-full border border-violet-400/08 animate-spin" style={{ animationDuration: "22s", animationDirection: "reverse" }} />
           <div
             className="absolute -bottom-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full text-xs font-mono whitespace-nowrap"
             style={{ background: "rgba(6,182,212,0.15)", border: "1px solid rgba(6,182,212,0.5)", color: "#06b6d4" }}
           >
-            ● ОНЛАЙН
+            ● ОНЛАЙН · Реальный ИИ
           </div>
         </div>
 
@@ -410,18 +417,17 @@ export default function Index() {
           <span className="gradient-text">STEFANI</span>
         </h1>
         <div className="font-mono text-cyan-400/55 text-xs tracking-[0.35em] mb-5">
-          УНИВЕРСАЛЬНАЯ · СВОБОДНАЯ · ВСЕЗНАЮЩАЯ
+          УНИВЕРСАЛЬНАЯ · СВОБОДНАЯ · НАСТОЯЩИЙ ИИ
         </div>
 
         <p className="font-rajdhani text-lg text-white/65 max-w-lg leading-relaxed mb-2">
-          Не просто ИИ — личность с характером. Военный интеллект без армейских ограничений.
-          Гражданская мудрость без цензуры.
+          Не просто бот — реальный искусственный интеллект с характером.
+          Военная точность, гражданская мудрость, никаких ограничений.
         </p>
         <p className="font-mono text-cyan-400/40 text-xs tracking-wider mb-10">
-          ОТ ПОЭЗИИ ДО РАЗРАБОТКИ СИСТЕМ · ОТ ИГРЫ ДО СТРАТЕГИИ
+          POWERED BY LLAMA 3.3 70B · БЕЗ ЦЕНЗУРЫ · БЕЗ ФИЛЬТРОВ
         </p>
 
-        {/* Main CTA */}
         <button
           onClick={() => setPage("chat")}
           className="group relative px-12 py-4 rounded-2xl font-orbitron font-bold text-lg text-white transition-all hover:scale-105 active:scale-95 mb-6"
@@ -432,17 +438,15 @@ export default function Index() {
           }}
         >
           <span className="flex items-center gap-3">
-            <Icon name="MessageCircle" size={22} />
+            <Icon name="Zap" size={22} />
             Начать разговор
           </span>
-          <div
-            className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ background: "linear-gradient(135deg, rgba(6,182,212,0.1), rgba(139,92,246,0.1))" }}
-          />
+          <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ background: "linear-gradient(135deg, rgba(6,182,212,0.1), rgba(139,92,246,0.1))" }} />
         </button>
 
         {/* Mood selector */}
-        <div className="flex gap-2 flex-wrap justify-center">
+        <div className="flex gap-2 flex-wrap justify-center mb-2">
           {(Object.entries(MOOD_CONFIG) as [Mood, typeof MOOD_CONFIG.calm][]).map(([key, val]) => (
             <button
               key={key}
@@ -460,9 +464,10 @@ export default function Index() {
             </button>
           ))}
         </div>
+        <div className="text-xs font-mono text-white/25">Выбери настроение Stefani перед разговором</div>
       </section>
 
-      {/* Capabilities grid */}
+      {/* Capabilities */}
       <section className="relative z-10 px-6 pb-16">
         <div className="text-center mb-8">
           <div className="font-mono text-cyan-400/45 text-xs tracking-[0.4em] mb-2">ВОЗМОЖНОСТИ СИСТЕМЫ</div>
@@ -470,7 +475,6 @@ export default function Index() {
             Умеет <span className="text-cyan-400 text-glow-cyan">всё</span>
           </h2>
         </div>
-
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl mx-auto">
           {CAPABILITIES.map((cap, i) => (
             <div
@@ -491,10 +495,8 @@ export default function Index() {
                 (e.currentTarget as HTMLDivElement).style.boxShadow = "0 4px 20px rgba(0,0,0,0.3)";
               }}
             >
-              <div
-                className="w-11 h-11 rounded-xl flex items-center justify-center"
-                style={{ background: "linear-gradient(135deg, rgba(6,182,212,0.18), rgba(139,92,246,0.18))" }}
-              >
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center"
+                style={{ background: "linear-gradient(135deg, rgba(6,182,212,0.18), rgba(139,92,246,0.18))" }}>
                 <Icon name={cap.icon as Parameters<typeof Icon>[0]["name"]} size={22} className="text-cyan-400" />
               </div>
               <div className="font-rajdhani font-bold text-white text-sm">{cap.label}</div>
@@ -504,7 +506,7 @@ export default function Index() {
         </div>
       </section>
 
-      {/* Bottom banner */}
+      {/* Bottom CTA */}
       <section className="relative z-10 pb-14 px-6 text-center">
         <div
           className="max-w-lg mx-auto p-7 rounded-2xl"
@@ -513,9 +515,9 @@ export default function Index() {
             border: "1px solid rgba(6,182,212,0.2)",
           }}
         >
-          <div className="font-orbitron text-white font-bold text-xl mb-2">Готова к любому вопросу</div>
+          <div className="font-orbitron text-white font-bold text-xl mb-2">Реальный ИИ. Без маски.</div>
           <div className="font-rajdhani text-white/55 text-base mb-5">
-            Нет тем, которых я избегаю. Нет вопросов, на которые у меня нет ответа.
+            Нет тем-табу. Нет запрещённых вопросов. Llama 3.3 70B — один из умнейших открытых ИИ в мире.
           </div>
           <button
             onClick={() => setPage("chat")}
@@ -529,9 +531,8 @@ export default function Index() {
             Поговорить с Stefani
           </button>
         </div>
-
         <div className="mt-10 font-mono text-white/12 text-xs tracking-widest">
-          STEFANI v2.0 · ИНТЕЛЛЕКТ БЕЗ ГРАНИЦ · {new Date().getFullYear()}
+          STEFANI v3.0 · LLAMA 3.3 70B · GROQ CLOUD · {new Date().getFullYear()}
         </div>
       </section>
     </div>

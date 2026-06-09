@@ -1,0 +1,19 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "No API key returns 503",
+      "method": "POST",
+      "path": "/",
+      "body": {"messages": [{"role": "user", "text": "Привет"}], "mood": "calm"},
+      "expectedStatus": 503,
+      "expectedBody": {"error": "NO_API_KEY"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
