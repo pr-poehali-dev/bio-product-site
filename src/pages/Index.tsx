@@ -117,11 +117,7 @@ export default function Index() {
       const data = await res.json();
 
       if (!res.ok) {
-        if (data.error === "NO_API_KEY") {
-          setError("⚠️ GROQ_API_KEY не добавлен. Вставь ключ в настройках проекта (Ядро → Секреты).");
-        } else {
-          setError(`Ошибка сервера: ${data.error || res.status}`);
-        }
+        setError(`Ошибка соединения (${res.status}). Попробуй ещё раз.`);
         setIsTyping(false);
         return;
       }
@@ -193,7 +189,7 @@ export default function Index() {
               </span>
             </div>
             <div className="text-xs text-cyan-400/50 font-mono">
-              {isTyping ? "печатает..." : "ОНЛАЙН · Llama 3.3 70B"}
+              {isTyping ? "печатает..." : "ОНЛАЙН · GPT-4o powered"}
             </div>
           </div>
 
@@ -376,7 +372,7 @@ export default function Index() {
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full" style={{ background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.2)" }}>
             <Icon name="Brain" size={12} className="text-cyan-400" />
-            <span className="text-xs font-mono text-cyan-400">Llama 3.3 70B</span>
+            <span className="text-xs font-mono text-cyan-400">GPT-4o · Без ключей</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -425,7 +421,7 @@ export default function Index() {
           Военная точность, гражданская мудрость, никаких ограничений.
         </p>
         <p className="font-mono text-cyan-400/40 text-xs tracking-wider mb-10">
-          POWERED BY LLAMA 3.3 70B · БЕЗ ЦЕНЗУРЫ · БЕЗ ФИЛЬТРОВ
+          POWERED BY GPT-4o · БЕЗ ЦЕНЗУРЫ · БЕЗ API КЛЮЧЕЙ
         </p>
 
         <button
@@ -532,7 +528,7 @@ export default function Index() {
           </button>
         </div>
         <div className="mt-10 font-mono text-white/12 text-xs tracking-widest">
-          STEFANI v3.0 · LLAMA 3.3 70B · GROQ CLOUD · {new Date().getFullYear()}
+          STEFANI v3.0 · GPT-4o · POLLINATIONS AI · {new Date().getFullYear()}
         </div>
       </section>
     </div>

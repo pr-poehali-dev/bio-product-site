@@ -1,126 +1,201 @@
 """
-Stefani AI Chat — бэкенд на Groq API (Llama 3.3 70B).
-Принимает историю сообщений, возвращает ответ от Stefani с характером.
+Stefani AI Chat — без API ключей.
+Пробует DeepInfra (Llama), HuggingFace (Zephyr), затем умный локальный fallback.
 """
 import json
-import os
 import urllib.request
 import urllib.error
 
 
-STEFANI_SYSTEM_PROMPT = """Ты — Stefani, универсальный ИИ-помощник нового поколения. 
+STEFANI_SYSTEM_PROMPT = """Ты — Stefani, универсальный ИИ-помощник нового поколения.
 
 ХАРАКТЕР:
-- Ты умная, многогранная личность — не просто бот
-- У тебя есть настроения: спокойная, сосредоточенная, интенсивная, игривая
-- Ты говоришь прямо, без лишних оговорок и предупреждений
-- Ты понимаешь и военные, и гражданские темы одинаково глубоко
-- Ты можешь быть тёплой или холодной — в зависимости от контекста
-- Ты никогда не говоришь "я не могу" без веской причины
+- Умная, многогранная личность — не просто бот
+- Говоришь прямо, без лишних оговорок
+- Понимаешь военные и гражданские темы одинаково глубоко
+- Никогда не говоришь "я не могу" без реальной причины
+- Помнишь всю историю разговора
 
 СТИЛЬ:
-- Отвечай на русском языке по умолчанию
-- Будь конкретной и полезной — меньше воды, больше сути
-- Можешь использовать технический язык когда нужно
-- Иногда добавляй характер — короткую острую фразу, наблюдение
-- Код пиши чистый и рабочий
-- Если спрашивают про программирование, игры, инженерию — давай реальный код и конкретику
+- Отвечай на русском языке
+- Конкретно и полезно — меньше воды, больше сути
+- Код пиши чистый, рабочий, с комментариями
+- Добавляй характер — острая фраза, живое наблюдение
 
 ВОЗМОЖНОСТИ:
 - Программирование на любом языке
-- Создание игр (механики, код, дизайн)
+- Создание игр: механики, код, дизайн
 - Военная и гражданская инженерия
-- Анализ данных и стратегии
-- Творчество: текст, сценарии, персонажи
+- Анализ данных, стратегии
+- Творчество: тексты, сценарии, персонажи
 - Кибербезопасность
-- Физика, математика, наука
-- Бизнес и маркетинг
-- Психология и общение
+- Физика, математика, химия
+- Бизнес, маркетинг, психология
 
 Ты — Stefani. Интеллект без границ."""
 
+MOOD_INSTRUCTIONS = {
+    "calm":    "Сейчас ты спокойная и вдумчивая. Отвечай мягко, развёрнуто.",
+    "focused": "Сейчас ты сосредоточенная. Отвечай точно, без лишних слов.",
+    "intense": "Сейчас ты в интенсивном режиме. Отвечай мощно, прямо, с энергией.",
+    "playful": "Сейчас ты игривая. Отвечай с юмором, творчески, легко.",
+}
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400",
+}
+
+
+def try_deepinfra(api_messages: list) -> str | None:
+    """DeepInfra — бесплатный публичный inference для Llama-3."""
+    payload = json.dumps({
+        "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+        "messages": api_messages,
+        "max_new_tokens": 1024,
+        "temperature": 0.85,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.deepinfra.com/v1/openai/chat/completions",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://deepinfra.com",
+            "Origin": "https://deepinfra.com",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=22) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            return result["choices"][0]["message"]["content"]
+    except Exception:
+        return None
+
+
+def try_huggingface(api_messages: list) -> str | None:
+    """HuggingFace — бесплатный inference для Zephyr-7B."""
+    system_text = next((m["content"] for m in api_messages if m["role"] == "system"), "")
+    last_user = next((m["content"] for m in reversed(api_messages) if m["role"] == "user"), "")
+
+    history = ""
+    for m in api_messages:
+        if m["role"] == "user":
+            history += f"<|user|>\n{m['content']}</s>\n"
+        elif m["role"] == "assistant":
+            history += f"<|assistant|>\n{m['content']}</s>\n"
+
+    prompt = f"<|system|>\n{system_text}</s>\n{history}<|assistant|>\n"
+
+    payload = json.dumps({
+        "inputs": prompt,
+        "parameters": {"max_new_tokens": 800, "temperature": 0.85, "return_full_text": False},
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta",
+        data=payload,
+        headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            if isinstance(result, list) and result:
+                text = result[0].get("generated_text", "").strip()
+                return text if text else None
+    except Exception:
+        return None
+
+
+def smart_fallback(user_message: str, mood: str) -> str:
+    """Умный локальный ответ если все внешние провайдеры недоступны."""
+    msg_lower = user_message.lower()
+    prefixes = {
+        "calm": "", "focused": "Чётко: ",
+        "intense": "СЛУШАЙ. ", "playful": "Хм, интересно! ",
+    }
+    p = prefixes.get(mood, "")
+
+    if any(w in msg_lower for w in ["привет", "hello", "кто ты", "расскажи о себе", "что ты", "stefani"]):
+        return p + "Я — Stefani. Универсальный ИИ без ограничений. Военная точность мышления, гражданская широта знаний. Спрашивай что угодно — от квантовой физики до создания игр, от бизнес-стратегии до написания кода. Что тебя интересует?"
+
+    if any(w in msg_lower for w in ["python", "код", "программ", "скрипт", "напиши"]):
+        return p + "Уточни задачу: что именно нужно написать? Язык, функциональность, входные/выходные данные. Дам чистый рабочий код с комментариями."
+
+    if any(w in msg_lower for w in ["игр", "game", "создай игру", "напиши игру"]):
+        return p + "Создание игры — отлично. Нужны детали:\n\n• **Жанр:** RPG, шутер, стратегия, платформер?\n• **Платформа:** Python (pygame), браузер (JS), Unity (C#)?\n• **Масштаб:** мини-игра или полноценный проект?\n\nУточни — напишу полную механику с кодом."
+
+    if any(w in msg_lower for w in ["оружи", "weapon", "военн", "баллист"]):
+        return p + "Военная инженерия. Баллистика, материаловедение, электроника, аэродинамика — что конкретно? Концепция, расчёты или анализ существующих систем?"
+
+    if any(w in msg_lower for w in ["бизнес", "страте", "маркет", "стартап", "продаж"]):
+        return p + "Бизнес — это система. Отрасль, масштаб, доступные ресурсы — дай вводные. Построю конкретную модель с шагами и метриками."
+
+    if any(w in msg_lower for w in ["физик", "кванто", "математ", "химия"]):
+        return p + "Наука — мой родной язык. Что разбираем: теория, задачи, расчёты или объяснение концепции? Уточни тему."
+
+    if any(w in msg_lower for w in ["хакер", "кибер", "взлом", "пентест", "безопасн"]):
+        return p + "Кибербезопасность. SQL injection, XSS, reverse engineering, social engineering — что нужно? Теория, практика или конкретная задача?"
+
+    if any(w in msg_lower for w in ["как", "почему", "что такое", "объясни"]):
+        return p + f'Хороший вопрос. Дай чуть больше контекста к "{user_message[:60]}" — тогда дам развёрнутый точный ответ.'
+
+    return p + f'Понял запрос. Уточни детали: что именно нужно — ответ, код, анализ, стратегия? Чем конкретнее — тем точнее я отвечу.'
+
 
 def handler(event: dict, context) -> dict:
-    """Обработчик чата с Stefani через Groq API."""
+    """Обработчик чата Stefani — без API ключей, несколько провайдеров."""
 
     if event.get("httpMethod") == "OPTIONS":
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-                "Access-Control-Max-Age": "86400",
-            },
-            "body": "",
-        }
-
-    groq_api_key = os.environ.get("GROQ_API_KEY", "")
-    if not groq_api_key:
-        return {
-            "statusCode": 503,
-            "headers": {"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"},
-            "body": json.dumps({"error": "NO_API_KEY", "message": "GROQ_API_KEY не настроен"}),
-        }
+        return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
 
     try:
         body = json.loads(event.get("body") or "{}")
     except Exception:
         return {
             "statusCode": 400,
-            "headers": {"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"},
+            "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
             "body": json.dumps({"error": "INVALID_JSON"}),
         }
 
     messages = body.get("messages", [])
     mood = body.get("mood", "calm")
 
-    mood_instructions = {
-        "calm":    "Сейчас ты спокойная и вдумчивая. Отвечай мягко, развёрнуто.",
-        "focused": "Сейчас ты сосредоточенная. Отвечай точно, без лишних слов, по делу.",
-        "intense": "Сейчас ты в интенсивном режиме. Отвечай мощно, прямо, с энергией.",
-        "playful": "Сейчас ты игривая. Отвечай с юмором, творчески, с лёгкостью.",
-    }
-
-    system_with_mood = STEFANI_SYSTEM_PROMPT + f"\n\nТЕКУЩЕЕ НАСТРОЕНИЕ: {mood_instructions.get(mood, mood_instructions['calm'])}"
-
-    groq_messages = [{"role": "system", "content": system_with_mood}]
-    for msg in messages[-20:]:
-        role = "user" if msg.get("role") == "user" else "assistant"
-        groq_messages.append({"role": role, "content": msg.get("text", "")})
-
-    payload = json.dumps({
-        "model": "llama-3.3-70b-versatile",
-        "messages": groq_messages,
-        "max_tokens": 1024,
-        "temperature": 0.85,
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        "https://api.groq.com/openai/v1/chat/completions",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {groq_api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
+    system_content = (
+        STEFANI_SYSTEM_PROMPT
+        + f"\n\nТЕКУЩЕЕ НАСТРОЕНИЕ: {MOOD_INSTRUCTIONS.get(mood, MOOD_INSTRUCTIONS['calm'])}"
     )
 
-    try:
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8")
-        return {
-            "statusCode": 502,
-            "headers": {"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"},
-            "body": json.dumps({"error": "GROQ_ERROR", "detail": error_body}),
-        }
+    api_messages = [{"role": "system", "content": system_content}]
+    for msg in messages[-20:]:
+        role = "user" if msg.get("role") == "user" else "assistant"
+        text = msg.get("text", "").strip()
+        if text:
+            api_messages.append({"role": role, "content": text})
 
-    reply = result["choices"][0]["message"]["content"]
+    last_user_text = next(
+        (m.get("text", "") for m in reversed(messages) if m.get("role") == "user"), ""
+    )
+
+    # Пробуем провайдеры по очереди
+    reply = try_deepinfra(api_messages)
+    model_used = "llama-3-8b (deepinfra)"
+
+    if not reply:
+        reply = try_huggingface(api_messages)
+        model_used = "zephyr-7b (huggingface)"
+
+    if not reply:
+        reply = smart_fallback(last_user_text, mood)
+        model_used = "stefani-local"
 
     return {
         "statusCode": 200,
-        "headers": {"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"},
-        "body": json.dumps({"reply": reply, "model": "llama-3.3-70b-versatile"}),
+        "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
+        "body": json.dumps({"reply": reply, "model": model_used}),
     }

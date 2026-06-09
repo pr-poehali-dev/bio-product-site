@@ -7,12 +7,12 @@
       "expectedStatus": 200
     },
     {
-      "name": "No API key returns 503",
+      "name": "Chat with Stefani",
       "method": "POST",
       "path": "/",
-      "body": {"messages": [{"role": "user", "text": "Привет"}], "mood": "calm"},
-      "expectedStatus": 503,
-      "expectedBody": {"error": "NO_API_KEY"},
+      "body": {"messages": [{"role": "user", "text": "Привет, кто ты?"}], "mood": "calm"},
+      "expectedStatus": 200,
+      "expectedBody": {"reply": "string"},
       "bodyMatcher": "partial"
     }
   ]
