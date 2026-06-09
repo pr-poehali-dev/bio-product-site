@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { useSpeech } from "@/hooks/useSpeech";
 import { useMicrophone } from "@/hooks/useMicrophone";
+import NameModal from "@/components/NameModal";
 
 const STEFANI_IMAGE = "https://cdn.poehali.dev/projects/eb4796b4-3ec9-42cb-87db-7dcd64d116d5/files/d9d0a338-db8b-4ee3-a7f1-b2571ce21cb8.jpg";
 const CHAT_API    = "https://functions.poehali.dev/0dd1813d-413c-4595-9a50-a307b6e38777";
@@ -11,7 +12,6 @@ type Mood = "calm" | "focused" | "intense" | "playful";
 type Emotion = "neutral" | "happy" | "empathetic" | "serious" | "curious" | "thinking" | "focused" | "calm" | "playful" | "intense";
 type Message = { role: "user" | "stefani"; text: string; time: string; emotion?: Emotion };
 
-// Генерируем или читаем sessionId из localStorage
 function getSessionId(): string {
   let id = localStorage.getItem("stefani_session");
   if (!id) {
@@ -19,6 +19,10 @@ function getSessionId(): string {
     localStorage.setItem("stefani_session", id);
   }
   return id;
+}
+
+function getUserName(): string | null {
+  return localStorage.getItem("stefani_username");
 }
 
 const MOOD_CONFIG: Record<Mood, { label: string; color: string; glow: string; emoji: string }> = {
@@ -231,11 +235,37 @@ export default function Index() {
   const [glitching, setGlitching] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState<number | null>(null);
+  const [userName, setUserName] = useState<string>(() => getUserName() || "");
+  const [showNameModal, setShowNameModal] = useState<boolean>(() => !getUserName());
   const [sessionId]             = useState(() => getSessionId());
   const messagesEndRef          = useRef<HTMLDivElement>(null);
 
   const speech = useSpeech();
   const currentMood = MOOD_CONFIG[mood];
+
+  const handleNameSave = (name: string) => {
+    const trimmed = name.trim();
+    localStorage.setItem("stefani_username", trimmed);
+    setUserName(trimmed);
+    setShowNameModal(false);
+    // Приветственное сообщение с именем
+    if (trimmed) {
+      const greetings = [
+        `${trimmed}... красивое имя. Ну что, поговорим?`,
+        `О, ${trimmed}! Запомнила. Рада познакомиться 😊`,
+        `${trimmed} — звучит хорошо. Я Stefani. Что хочешь обсудить?`,
+        `Привет, ${trimmed}. Давно тебя ждала.`,
+      ];
+      const greeting = greetings[Math.floor(Math.random() * greetings.length)];
+      setMessages([{
+        role: "stefani",
+        text: greeting,
+        time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
+        emotion: "happy",
+      }]);
+      setCurrentEmotion("happy");
+    }
+  };
 
   const mic = useMicrophone(
     (text) => { setInput(""); sendMessageWithText(text); },
@@ -298,7 +328,7 @@ export default function Index() {
       const res = await fetch(CHAT_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMsgs, mood }),
+        body: JSON.stringify({ messages: newMsgs, mood, user_name: userName || null }),
       });
       const data = await res.json();
       if (!res.ok) { setError(`Ошибка соединения (${res.status}). Попробуй ещё раз.`); setCurrentEmotion("neutral"); return; }
@@ -358,6 +388,7 @@ export default function Index() {
   if (page === "chat") {
     return (
       <div className="bg-[#050a14] flex flex-col relative overflow-hidden" style={{ height: "100dvh" }}>
+        {showNameModal && <NameModal onSave={handleNameSave} />}
         <div className="absolute inset-0 bg-grid opacity-40 pointer-events-none" />
         {particles.slice(0, 6).map((s, i) => <Particle key={i} style={s} />)}
 
@@ -391,8 +422,11 @@ export default function Index() {
               <EmotionBar emotion={isTyping ? "thinking" : currentEmotion} />
               <Equalizer color={currentMood.color} playing={speech.isSpeaking} />
             </div>
-            <div className="text-xs text-cyan-400/45 font-mono">
-              {speech.isSpeaking ? "говорит..." : isTyping ? "обрабатывает..." : "ОНЛАЙН · память активна"}
+            <div className="text-xs text-cyan-400/45 font-mono flex items-center gap-1.5">
+              {speech.isSpeaking ? "говорит..." : isTyping ? "обрабатывает..." : "ОНЛАЙН"}
+              {userName && (
+                <span className="text-white/30">· для <span style={{ color: currentMood.color }}>{userName}</span></span>
+              )}
             </div>
           </div>
 
@@ -430,9 +464,17 @@ export default function Index() {
               </button>
             ))}
             <button
+              onClick={() => setShowNameModal(true)}
+              title={userName ? `Сменить имя (${userName})` : "Назвать себя"}
+              className="w-7 h-7 rounded-full flex items-center justify-center transition-all hover:scale-110 ml-1"
+              style={{ background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.25)", color: "#06b6d4" }}
+            >
+              <Icon name="UserRound" size={13} />
+            </button>
+            <button
               onClick={clearHistory}
               title="Новый разговор"
-              className="w-7 h-7 rounded-full flex items-center justify-center transition-all hover:scale-110 ml-1"
+              className="w-7 h-7 rounded-full flex items-center justify-center transition-all hover:scale-110"
               style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#ef4444" }}
             >
               <Icon name="RotateCcw" size={13} />
