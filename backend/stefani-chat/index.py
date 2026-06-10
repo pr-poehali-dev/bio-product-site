@@ -1,6 +1,6 @@
 """
-Stefani AI Chat — живой женский персонаж.
-Провайдеры: Groq → OpenRouter → ScaleSerpApi/Together → DuckDuckGo поиск → локальный интеллект.
+Stefani AI Chat — живой женский персонаж. v2
+Провайдеры: Groq → OpenRouter → DuckDuckGo поиск → локальный интеллект.
 """
 import json
 import random
