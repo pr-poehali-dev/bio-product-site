@@ -510,17 +510,40 @@ export default function Index() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: newMsgs, mood, user_name: userName || null }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError(`Ошибка соединения (${res.status}). Попробуй ещё раз.`); setCurrentEmotion("neutral"); return; }
+
+      let data: { reply?: string; emotion?: string; error?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        setError("Получен некорректный ответ от сервера. Попробуй ещё раз.");
+        setCurrentEmotion("serious");
+        return;
+      }
+
+      if (!res.ok || !data.reply) {
+        setError(`Ошибка (${res.status}). Попробуй ещё раз.`);
+        setCurrentEmotion("neutral");
+        return;
+      }
+
       const emotion: Emotion = (data.emotion as Emotion) || "neutral";
       setCurrentEmotion(emotion);
-      const replyMsg: Message = { role: "stefani", text: data.reply, time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }), emotion };
+      const replyMsg: Message = {
+        role: "stefani",
+        text: data.reply,
+        time: new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }),
+        emotion,
+      };
       const withReply: Message[] = [...newMsgs, replyMsg];
       setMessages(withReply);
       saveHistory(withReply, mood);
       if (speech.autoSpeak) { setSpeakingMsgIdx(withReply.length - 1); speech.speak(data.reply, emotion); }
-    } catch {
-      setError("Нет связи с сервером."); setCurrentEmotion("serious");
+    } catch (err) {
+      const msg = err instanceof TypeError && String(err).includes("fetch")
+        ? "Нет соединения с интернетом."
+        : "Сервер не отвечает. Попробуй через секунду.";
+      setError(msg);
+      setCurrentEmotion("serious");
     } finally {
       setIsTyping(false);
     }

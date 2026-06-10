@@ -75,31 +75,58 @@ def try_groq(api_messages: list) -> str | None:
 def try_openrouter(api_messages: list) -> str | None:
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not key:
+        print("[openrouter] no key")
         return None
-    payload = json.dumps({
-        "model": "meta-llama/llama-3.1-8b-instruct:free",
-        "messages": api_messages,
-        "max_tokens": 700,
-        "temperature": 0.9,
-    }).encode()
-    req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {key}",
-            "HTTP-Referer": "https://stefani.ai",
-            "X-Title": "Stefani AI",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            result = json.loads(r.read())
-            text = result["choices"][0]["message"]["content"]
-            return text if text and len(text.strip()) > 10 else None
-    except Exception:
-        return None
+
+    # Пробуем несколько бесплатных моделей по очереди
+    models = [
+        "meta-llama/llama-3.1-8b-instruct:free",
+        "mistralai/mistral-7b-instruct:free",
+        "google/gemma-2-9b-it:free",
+        "qwen/qwen-2-7b-instruct:free",
+    ]
+
+    for model in models:
+        payload = json.dumps({
+            "model": model,
+            "messages": api_messages,
+            "max_tokens": 700,
+            "temperature": 0.9,
+        }).encode()
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {key}",
+                "HTTP-Referer": "https://poehali.dev",
+                "X-Title": "Stefani AI",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=25) as r:
+                result = json.loads(r.read())
+                # Проверяем на ошибку rate limit или пустой ответ
+                if result.get("error"):
+                    print(f"[openrouter] {model} error: {result['error']}")
+                    continue
+                choices = result.get("choices", [])
+                if not choices:
+                    print(f"[openrouter] {model} empty choices")
+                    continue
+                text = choices[0].get("message", {}).get("content", "")
+                if text and len(text.strip()) > 10:
+                    print(f"[openrouter] success with {model}")
+                    return text.strip()
+        except urllib.error.HTTPError as e:
+            print(f"[openrouter] {model} HTTP {e.code}")
+            continue
+        except Exception as e:
+            print(f"[openrouter] {model} exception: {e}")
+            continue
+
+    return None
 
 
 def try_together(api_messages: list) -> str | None:
@@ -377,22 +404,31 @@ def handler(event: dict, context) -> dict:
         if text:
             api_messages.append({"role": role, "content": text})
 
-    # Пробуем провайдеров
+    # Пробуем провайдеров по очереди с логами
+    reply = None
+    model_used = "stefani-local"
+
     reply = try_groq(api_messages)
-    model_used = "llama-3.1 (groq)"
+    if reply:
+        model_used = "groq"
+        print(f"[handler] used groq, reply len={len(reply)}")
 
     if not reply:
         reply = try_openrouter(api_messages)
-        model_used = "llama-3.1 (openrouter)"
+        if reply:
+            model_used = "openrouter"
+            print(f"[handler] used openrouter, reply len={len(reply)}")
 
     if not reply:
         reply = try_together(api_messages)
-        model_used = "llama-3.2 (together)"
+        if reply:
+            model_used = "together"
+            print(f"[handler] used together, reply len={len(reply)}")
 
     if not reply:
-        # Нет ключей — используем поиск + локальный интеллект
+        print(f"[handler] all providers failed, using local fallback for: {last_user_text[:50]}")
         reply = smart_fallback(last_user_text, mood, user_name)
-        model_used = "stefani-local+search"
+        model_used = "local"
 
     emotion = detect_emotion(reply, mood)
 
