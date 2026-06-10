@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import Icon from "@/components/ui/icon";
 import { useSpeech } from "@/hooks/useSpeech";
 import { useMicrophone } from "@/hooks/useMicrophone";
@@ -67,12 +68,19 @@ const CAPABILITIES = [
 ];
 
 const PRESET_QUESTIONS = [
-  "Напиши игру на Python",
+  "🎮 Создай браузерную игру",
   "Расскажи о себе, Stefani",
   "Напиши стратегию для бизнеса",
   "Объясни квантовую физику",
   "Создай персонажа для RPG",
   "Как работает нейросеть?",
+];
+
+const GAME_PRESETS = [
+  { label: "🗡️ Top-down RPG", request: "top-down RPG с картой, героем, монстрами и боёвкой" },
+  { label: "🏃 Платформер", request: "платформер с прыжками, врагами и монетами" },
+  { label: "🛡️ Tower Defense", request: "tower defense с волнами врагов и башнями" },
+  { label: "🕹️ Аркада", request: "аркада в стиле Asteroids — стреляй в астероиды" },
 ];
 
 const INIT_MESSAGE: Message = {
@@ -405,6 +413,7 @@ function HeroSection({ mood, setMood, onStart, userName }: {
 // ─── Главный компонент ────────────────────────────────
 
 export default function Index() {
+  const navigate = useNavigate();
   const [page, setPage]         = useState<"home" | "chat">("home");
   const [mood, setMood]         = useState<Mood>("calm");
   const [messages, setMessages] = useState<Message[]>([INIT_MESSAGE]);
@@ -554,6 +563,18 @@ export default function Index() {
     if (!msg) return;
     setInput("");
     sendMessageWithText(msg);
+  };
+
+  const isGameRequest = (text: string) => {
+    const t = text.toLowerCase();
+    return /\b(напиши|создай|сделай|сгенерируй)\b/.test(t) &&
+      /\b(игр[уаы]|платформер|аркад[уы]|rpg|шутер|стратегию|tower defense|змейку|тетрис)\b/.test(t);
+  };
+
+  const handleGameLaunch = () => {
+    const req = input.trim() || "браузерная аркада — собирай монеты уворачивайся от врагов";
+    navigate(`/game?request=${encodeURIComponent(req)}`);
+    setInput("");
   };
 
   const handleSpeak = (text: string, emotion: Emotion | undefined, idx: number) => {
@@ -778,9 +799,17 @@ export default function Index() {
         {/* QUICK CHIPS */}
         <div className="px-4 pb-2 relative z-10 flex gap-2 overflow-x-auto flex-shrink-0" style={{ scrollbarWidth: "none" }}>
           {PRESET_QUESTIONS.map((q) => (
-            <button key={q} onClick={() => sendMessageWithText(q)} disabled={isTyping}
+            <button key={q}
+              onClick={() => q.startsWith("🎮")
+                ? navigate("/game?request=" + encodeURIComponent("браузерная игра на выбор — платформер или аркада"))
+                : sendMessageWithText(q)
+              }
+              disabled={isTyping}
               className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-rajdhani transition-all hover:scale-105 whitespace-nowrap disabled:opacity-40"
-              style={{ background: `${currentMood.color}10`, border: `1px solid ${currentMood.color}28`, color: currentMood.color }}>
+              style={q.startsWith("🎮")
+                ? { background: "linear-gradient(135deg,#7c3aed22,#ff6b9d22)", border: "1px solid #7c3aed66", color: "#c084fc" }
+                : { background: `${currentMood.color}10`, border: `1px solid ${currentMood.color}28`, color: currentMood.color }
+              }>
               {q}
             </button>
           ))}
@@ -832,7 +861,27 @@ export default function Index() {
               }}>
               <Icon name="Send" size={16} />
             </button>
+
+            {/* Кнопка игры — показывается если похоже на игровой запрос */}
+            {isGameRequest(input) && (
+              <button
+                onClick={handleGameLaunch}
+                title="Запустить игру"
+                className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-all hover:scale-110 animate-pulse"
+                style={{ background: "linear-gradient(135deg, #7c3aed, #ff6b9d)", color: "#fff" }}
+              >
+                <Icon name="Gamepad2" size={16} />
+              </button>
+            )}
           </div>
+
+          {/* Подсказка игры */}
+          {isGameRequest(input) && (
+            <div className="flex items-center gap-1.5 mt-1.5 px-1">
+              <Icon name="Gamepad2" size={12} className="text-purple-400" />
+              <span className="text-xs text-purple-400">Нажми 🎮 — Stefani создаст игру на отдельной странице</span>
+            </div>
+          )}
 
           {/* Статус микрофона */}
           {mic.isListening && (
@@ -931,6 +980,44 @@ export default function Index() {
               <div className="font-rajdhani font-bold text-white text-sm">{cap.label}</div>
               <div className="text-xs text-white/32 leading-snug">{cap.desc}</div>
             </div>
+          ))}
+        </div>
+      </section>
+
+      {/* GAME SECTION */}
+      <section className="relative z-10 px-6 pb-14">
+        <div className="text-center mb-6">
+          <div className="font-mono text-purple-400/50 text-xs tracking-[0.4em] mb-2">ИГРОВОЙ ДВИЖОК</div>
+          <h2 className="font-orbitron font-bold text-white text-2xl">
+            Пишет <span style={{ color: "#c084fc", textShadow: "0 0 20px #c084fc88" }}>браузерные игры</span>
+          </h2>
+          <p className="text-white/40 text-sm mt-2 font-rajdhani">Скажи что хочешь — Stefani напишет готовую игру за 30 секунд</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-3xl mx-auto">
+          {GAME_PRESETS.map((g) => (
+            <button
+              key={g.label}
+              onClick={() => navigate(`/game?request=${encodeURIComponent(g.request)}`)}
+              className="p-4 rounded-xl flex flex-col items-center text-center gap-2 transition-all hover:scale-105 hover:-translate-y-1 group"
+              style={{
+                background: "rgba(124,58,237,0.08)",
+                border: "1px solid rgba(192,132,252,0.15)",
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(192,132,252,0.5)";
+                (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 8px 30px rgba(124,58,237,0.2)";
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(192,132,252,0.15)";
+                (e.currentTarget as HTMLButtonElement).style.boxShadow = "none";
+              }}
+            >
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl"
+                style={{ background: "linear-gradient(135deg,rgba(124,58,237,0.2),rgba(255,107,157,0.2))" }}>
+                {g.label.split(" ")[0]}
+              </div>
+              <div className="font-rajdhani font-bold text-white text-sm">{g.label.split(" ").slice(1).join(" ")}</div>
+            </button>
           ))}
         </div>
       </section>

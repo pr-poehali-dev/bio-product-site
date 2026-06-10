@@ -14,6 +14,15 @@
       "expectedStatus": 200,
       "expectedBody": {"reply": "string"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Generate game fallback",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "generate_game", "request": "аркада", "mode": "create"},
+      "expectedStatus": 200,
+      "expectedBody": {"html": "string"},
+      "bodyMatcher": "partial"
     }
   ]
 }

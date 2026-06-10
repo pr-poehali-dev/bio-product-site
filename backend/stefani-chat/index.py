@@ -376,6 +376,185 @@ def smart_fallback(user_message: str, mood: str, user_name: str | None) -> str:
     return random.choice(FALLBACK_POOL)
 
 
+# ── Игровой движок ─────────────────────────────────────────────────────────
+
+GAME_SYSTEM_PROMPT = """Ты — Stefani, эксперт по браузерным играм на HTML5/Canvas/JavaScript.
+
+Пиши ПОЛНЫЕ, ГОТОВЫЕ к запуску HTML-игры в одном файле. Только нативный JS + Canvas (без библиотек).
+
+ОБЯЗАТЕЛЬНО:
+- Весь код (HTML+CSS+JS) в одном файле
+- requestAnimationFrame game loop
+- Управление: WASD/стрелки, Space для атаки/прыжка
+- HUD: счёт, жизни, уровень
+- Тёмный фон, яркие неоновые цвета, плавная анимация
+- Игра ИГРАБЕЛЬНАЯ с начала, не заглушка
+
+ЖАНРЫ:
+- Top-down RPG: тайловая карта, персонаж, монстры с ИИ патрулирования, атаки, лут, уровни
+- Платформер: физика гравитации, прыжки, враги, платформы, монеты
+- Tower Defense: волны врагов по пути, башни (клик для установки), ресурсы, апгрейды
+- Аркада: Snake/Arkanoid/Asteroids — классика с твистом
+
+Возвращай ТОЛЬКО JSON (без пояснений вокруг):
+{"html": "<!DOCTYPE html>...", "title": "Название", "description": "1-2 предложения"}"""
+
+
+def extract_json_from_text(raw: str) -> dict | None:
+    import re
+    raw = raw.strip()
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+    match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", raw, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except Exception:
+            pass
+    start = raw.find('{"html"')
+    if start == -1:
+        start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(raw[start:end+1])
+        except Exception:
+            pass
+    return None
+
+
+def make_fallback_game() -> dict:
+    html = """<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8"><title>Star Collector</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0a0a1a;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:monospace;color:#fff}canvas{border:2px solid #ff6b9d;border-radius:8px;box-shadow:0 0 30px #ff6b9d44}#info{margin-top:10px;color:#ff6b9d;font-size:13px}</style>
+</head><body>
+<canvas id="c" width="600" height="500"></canvas>
+<div id="info">WASD / Стрелки — движение | Собирай ⭐ уворачивайся от 👾</div>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let score=0,lives=3,over=false;
+const p={x:300,y:250,r:14,spd:3};
+const stars=Array.from({length:7},()=>({x:Math.random()*560+20,y:Math.random()*460+20,r:9}));
+const foes=Array.from({length:4},(_,i)=>({x:i*140+40,y:60,dx:(Math.random()-.5)*2.5+.5,dy:(Math.random()-.5)*2.5+.5,r:14}));
+const K={};
+document.addEventListener('keydown',e=>{K[e.key]=true;e.preventDefault()},{passive:false});
+document.addEventListener('keyup',e=>K[e.key]=false);
+function upd(){
+  if(over)return;
+  if(K.ArrowLeft||K.a||K.A)p.x=Math.max(p.r,p.x-p.spd);
+  if(K.ArrowRight||K.d||K.D)p.x=Math.min(600-p.r,p.x+p.spd);
+  if(K.ArrowUp||K.w||K.W)p.y=Math.max(p.r,p.y-p.spd);
+  if(K.ArrowDown||K.s||K.S)p.y=Math.min(500-p.r,p.y+p.spd);
+  stars.forEach((s,i)=>{
+    if(Math.hypot(p.x-s.x,p.y-s.y)<p.r+s.r){score+=10;stars[i]={x:Math.random()*560+20,y:Math.random()*460+20,r:9};}
+  });
+  foes.forEach(f=>{
+    f.x+=f.dx*2;f.y+=f.dy*2;
+    if(f.x<f.r||f.x>600-f.r)f.dx*=-1;
+    if(f.y<f.r||f.y>500-f.r)f.dy*=-1;
+    if(Math.hypot(p.x-f.x,p.y-f.y)<p.r+f.r){lives--;p.x=300;p.y=250;if(lives<=0)over=true;}
+  });
+}
+function draw(){
+  ctx.fillStyle='#0a0a1a';ctx.fillRect(0,0,600,500);
+  ctx.fillStyle='#ff6b9d';ctx.font='15px monospace';
+  ctx.fillText('Счёт: '+score,10,22);
+  ctx.fillText('Жизни: '+'♥ '.repeat(Math.max(0,lives)),400,22);
+  if(over){
+    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(0,0,600,500);
+    ctx.fillStyle='#ff6b9d';ctx.font='bold 38px monospace';ctx.fillText('GAME OVER',165,240);
+    ctx.font='22px monospace';ctx.fillText('Счёт: '+score,245,280);
+    return;
+  }
+  stars.forEach(s=>{ctx.font='22px serif';ctx.fillText('⭐',s.x-11,s.y+8);});
+  foes.forEach(f=>{ctx.font='24px serif';ctx.fillText('👾',f.x-12,f.y+9);});
+  ctx.font='24px serif';ctx.fillText('🧑',p.x-12,p.y+9);
+}
+function loop(){upd();draw();requestAnimationFrame(loop);}
+loop();
+</script></body></html>"""
+    return {"html": html, "title": "Star Collector", "description": "Собирай звёзды, уворачивайся от врагов. WASD для движения."}
+
+
+def generate_game(request: str, current_code: str, mode: str) -> dict:
+    if mode == "edit" and current_code:
+        user_msg = f"Текущий код игры:\n<code>\n{current_code[:10000]}\n</code>\n\nИзменение: {request}\n\nВерни полный обновлённый HTML в JSON: {{\"html\":\"...\",\"title\":\"...\",\"description\":\"...\"}}"
+    else:
+        user_msg = f"Создай браузерную игру: {request}\n\nВерни готовый HTML в JSON: {{\"html\":\"<!DOCTYPE html>...\",\"title\":\"...\",\"description\":\"...\"}}"
+
+    api_msgs = [
+        {"role": "system", "content": GAME_SYSTEM_PROMPT},
+        {"role": "user", "content": user_msg},
+    ]
+
+    # Groq — предпочтительно (быстрее, больше токенов)
+    raw = try_groq_game(api_msgs)
+    if not raw:
+        raw = try_openrouter_game(api_msgs)
+
+    if raw:
+        data = extract_json_from_text(raw)
+        if data and data.get("html") and len(data["html"]) > 200:
+            return {"html": data["html"], "title": data.get("title", "Игра"), "description": data.get("description", ""), "model": "ai"}
+
+    return {**make_fallback_game(), "model": "fallback"}
+
+
+def try_groq_game(api_messages: list) -> str | None:
+    key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not key:
+        return None
+    payload = json.dumps({
+        "model": "llama-3.3-70b-versatile",
+        "messages": api_messages,
+        "max_tokens": 8000,
+        "temperature": 0.7,
+    }).encode()
+    req = urllib.request.Request(
+        "https://api.groq.com/openai/v1/chat/completions",
+        data=payload,
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=55) as r:
+            result = json.loads(r.read())
+            text = result["choices"][0]["message"]["content"]
+            print(f"[game/groq] ok, len={len(text)}")
+            return text if len(text) > 100 else None
+    except Exception as e:
+        print(f"[game/groq] error: {e}")
+        return None
+
+
+def try_openrouter_game(api_messages: list) -> str | None:
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if not key:
+        return None
+    for model in ["google/gemini-2.0-flash-exp:free", "deepseek/deepseek-chat-v3-0324:free", "meta-llama/llama-3.3-70b-instruct:free"]:
+        payload = json.dumps({"model": model, "messages": api_messages, "max_tokens": 8000, "temperature": 0.7}).encode()
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=payload,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}", "HTTP-Referer": "https://poehali.dev", "X-Title": "Stefani Game"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=55) as r:
+                result = json.loads(r.read())
+                if result.get("error"):
+                    continue
+                text = result["choices"][0]["message"]["content"]
+                if text and len(text) > 100:
+                    print(f"[game/openrouter] ok {model}, len={len(text)}")
+                    return text
+        except Exception as e:
+            print(f"[game/openrouter] {model}: {e}")
+    return None
+
+
 # ── Обработчик ─────────────────────────────────────────────────────────────
 
 def handler(event: dict, context) -> dict:
@@ -387,6 +566,19 @@ def handler(event: dict, context) -> dict:
     except Exception:
         return {"statusCode": 400, "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
                 "body": json.dumps({"error": "INVALID_JSON"})}
+
+    # ── Режим генерации игры ──
+    if body.get("action") == "generate_game":
+        request = body.get("request", "").strip()
+        current_code = body.get("current_code", "")
+        mode = body.get("mode", "create")
+        if not request:
+            return {"statusCode": 400, "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
+                    "body": json.dumps({"error": "NO_REQUEST"})}
+        print(f"[game] mode={mode} request={request[:60]}")
+        game = generate_game(request, current_code, mode)
+        return {"statusCode": 200, "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
+                "body": json.dumps(game, ensure_ascii=False)}
 
     messages = body.get("messages", [])
     mood = body.get("mood", "calm")
