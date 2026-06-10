@@ -755,7 +755,7 @@ export default function Index() {
         {/* QUICK CHIPS */}
         <div className="px-4 pb-2 relative z-10 flex gap-2 overflow-x-auto flex-shrink-0" style={{ scrollbarWidth: "none" }}>
           {PRESET_QUESTIONS.map((q) => (
-            <button key={q} onClick={() => sendMessage(q)} disabled={isTyping}
+            <button key={q} onClick={() => sendMessageWithText(q)} disabled={isTyping}
               className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full font-rajdhani transition-all hover:scale-105 whitespace-nowrap disabled:opacity-40"
               style={{ background: `${currentMood.color}10`, border: `1px solid ${currentMood.color}28`, color: currentMood.color }}>
               {q}
