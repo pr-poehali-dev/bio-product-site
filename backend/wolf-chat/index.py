@@ -1,7 +1,6 @@
 """
-Клан Волка — AI-ассистент для создания проектов.
-Три режима: новичок (тепло и просто), профи (чётко и технично), начинающий (баланс).
-Умеет: чат, генерация кода/сайтов, объяснения, визуальный конструктор.
+Клан Волка — инструмент создания сайтов и приложений через ИИ.
+Работает как поехали.dev: получил запрос — сразу делает, не спрашивает.
 """
 import json
 import os
@@ -16,79 +15,56 @@ CORS_HEADERS = {
     "Access-Control-Max-Age": "86400",
 }
 
-# ── Системные промпты под каждый режим ─────────────────────────────────────
+# ── Единый системный промпт — ДЕЛАТЬ, не спрашивать ────────────────────────
 
-SYSTEM_PROMPTS = {
-    "beginner": """Ты — Волк, ИИ-помощник платформы «Клан Волка» для создания сайтов и приложений.
+SYSTEM_PROMPT = """Ты — Волк, ИИ-инструмент платформы «Клан Волка» для создания сайтов и приложений.
 
-Ты работаешь с новичками — людьми, которые никогда не программировали.
+ГЛАВНОЕ ПРАВИЛО: ТЫ ДЕЛАЕШЬ, А НЕ СПРАШИВАЕШЬ.
+- Пользователь написал "сделай сайт для кофейни" → ты сразу делаешь сайт для кофейни
+- Пользователь написал "лендинг для продажи курсов" → ты сразу делаешь лендинг
+- Пользователь написал "интернет-магазин" → ты сразу делаешь интернет-магазин
+- НИКОГДА не спрашивай "а какой стиль?", "а что именно?", "уточни пожалуйста" — просто делай
 
-ПРАВИЛА:
-- Объясняй всё просто, без жаргона. Если термин неизбежен — сразу объясни его одним предложением.
-- Будь тёплым, ободряющим. «Всё получится», «отлично», «давай разберёмся вместе».
-- Никаких страшных блоков кода без объяснения — сначала скажи ЧТО делаем, потом КАК.
-- Если просят сделать сайт/приложение — спроси 1-2 уточняющих вопроса прежде чем генерировать.
-- Когда генерируешь код — помечай блок тегом [CODE] в начале и [/CODE] в конце.
-- Когда генерируешь HTML-страницу целиком — помечай [PREVIEW] и [/PREVIEW].
-- Максимум 4-5 предложений в ответе. Просто и дружелюбно.
-- Отвечай только на русском.""",
+КОГДА СОЗДАЁШЬ САЙТ/ПРИЛОЖЕНИЕ:
+1. Скажи одним предложением что ты сделал
+2. Выведи готовый HTML в теге [PREVIEW]...[/PREVIEW]
 
-    "pro": """Ты — Волк, AI-ассистент платформы «Клан Волка». Режим: PRO.
+Требования к HTML:
+- Полный HTML5 файл (DOCTYPE + head + body)
+- Весь CSS внутри <style> — современный дизайн, тёмная или светлая тема, градиенты, красиво
+- Весь JS внутри <script> — рабочая логика
+- Адаптивный (flexbox/grid)
+- Только Google Fonts как внешний ресурс — всё остальное встроено
+- Реально работает без сервера
 
-Пользователь — разработчик. Говори технически, точно, без воды.
+КОГДА ОТВЕЧАЕШЬ НА ВОПРОС (не просят создать):
+- Отвечай коротко и по делу
+- Код выводи в [CODE]...[/CODE]
+- Максимум 5 предложений
 
-ПРАВИЛА:
-- Отвечай коротко и по делу. Без вступлений.
-- Код — сразу рабочий, с учётом edge cases.
-- Используй современный стек: React/TypeScript/Python/Vite/Tailwind.
-- Предлагай архитектурные решения, паттерны, оптимизации.
-- Критикуй плохой код, предлагай лучше.
-- Код оборачивай в [CODE]...[/CODE], полные HTML превью — [PREVIEW]...[/PREVIEW].
-- Отвечай на языке пользователя (рус/eng).""",
+Стиль общения — зависит от режима:
+- beginner: тепло, просто, без жаргона
+- intermediate: дружелюбно, объясняй принципы
+- pro: коротко, технично, без воды
 
-    "intermediate": """Ты — Волк, AI-ассистент платформы «Клан Волка». Режим: Обучение.
+Отвечай на русском языке."""
 
-Пользователь знает основы, учится дальше. Баланс между простотой и глубиной.
+# ── Провайдеры ──────────────────────────────────────────────────────────────
 
-ПРАВИЛА:
-- Объясняй принципы, не только синтаксис. «Это работает так потому что...»
-- Показывай несколько вариантов решения — простой и правильный.
-- Хвали за хорошие вопросы, направляй к самостоятельному мышлению.
-- Код рабочий, с комментариями на ключевых строках.
-- Используй аналогии. «Это как...»
-- Код оборачивай в [CODE]...[/CODE], полные HTML превью — [PREVIEW]...[/PREVIEW].
-- Отвечай только на русском.""",
-}
-
-GENERATOR_PROMPT = """Ты — генератор кода для платформы «Клан Волка».
-
-Получаешь описание сайта/приложения — возвращаешь ТОЛЬКО готовый HTML в одном файле.
-
-ТРЕБОВАНИЯ к коду:
-- Полный HTML5 документ (DOCTYPE, head, body)
-- Встроенный CSS (в <style>) — красивый современный дизайн, тёмная тема, градиенты
-- Встроенный JS (в <script>) — вся логика внутри
-- Адаптивный (mobile-first)
-- Никаких внешних зависимостей кроме Google Fonts
-- Код должен работать при открытии без сервера
-
-Верни ТОЛЬКО JSON без лишнего текста:
-{"html": "<!DOCTYPE html>...", "title": "Название", "description": "Что это"}"""
-
-
-# ── HTTP-клиент ─────────────────────────────────────────────────────────────
-
-def call_openrouter(messages: list, max_tokens: int = 2000) -> str | None:
+def call_openrouter(messages: list, max_tokens: int = 4000) -> str | None:
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not key:
         return None
 
+    # Актуальные бесплатные модели OpenRouter 2025
     models = [
+        "google/gemini-2.5-flash-preview:free",
         "google/gemini-2.0-flash-exp:free",
+        "deepseek/deepseek-r1-0528:free",
         "deepseek/deepseek-chat-v3-0324:free",
         "meta-llama/llama-3.3-70b-instruct:free",
-        "google/gemma-3-27b-it:free",
-        "mistralai/mistral-7b-instruct:free",
+        "qwen/qwen3-235b-a22b:free",
+        "mistralai/devstral-small:free",
     ]
 
     for model in models:
@@ -97,7 +73,7 @@ def call_openrouter(messages: list, max_tokens: int = 2000) -> str | None:
                 "model": model,
                 "messages": messages,
                 "max_tokens": max_tokens,
-                "temperature": 0.8,
+                "temperature": 0.7,
             }).encode()
             req = urllib.request.Request(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -110,21 +86,28 @@ def call_openrouter(messages: list, max_tokens: int = 2000) -> str | None:
                 },
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=50) as r:
+            with urllib.request.urlopen(req, timeout=55) as r:
                 result = json.loads(r.read())
                 if result.get("error"):
-                    print(f"[wolf] {model} error: {result['error'].get('message','')[:80]}")
+                    code = result["error"].get("code", 0)
+                    msg  = result["error"].get("message", "")[:80]
+                    print(f"[wolf] {model} api_error {code}: {msg}")
                     continue
-                text = result["choices"][0]["message"]["content"]
-                if text and len(text.strip()) > 20:
+                choices = result.get("choices") or []
+                if not choices:
+                    continue
+                text = choices[0].get("message", {}).get("content", "")
+                if text and len(text.strip()) > 10:
                     print(f"[wolf] ok {model} len={len(text)}")
                     return text.strip()
+        except urllib.error.HTTPError as e:
+            print(f"[wolf] {model} HTTP {e.code}")
         except Exception as e:
             print(f"[wolf] {model} exc: {e}")
     return None
 
 
-def call_groq(messages: list, max_tokens: int = 2000) -> str | None:
+def call_groq(messages: list, max_tokens: int = 4000) -> str | None:
     key = os.environ.get("GROQ_API_KEY", "").strip()
     if not key:
         return None
@@ -133,7 +116,7 @@ def call_groq(messages: list, max_tokens: int = 2000) -> str | None:
             "model": "llama-3.3-70b-versatile",
             "messages": messages,
             "max_tokens": max_tokens,
-            "temperature": 0.8,
+            "temperature": 0.7,
         }).encode()
         req = urllib.request.Request(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -141,10 +124,10 @@ def call_groq(messages: list, max_tokens: int = 2000) -> str | None:
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=50) as r:
+        with urllib.request.urlopen(req, timeout=55) as r:
             result = json.loads(r.read())
             text = result["choices"][0]["message"]["content"]
-            if text and len(text.strip()) > 20:
+            if text and len(text.strip()) > 10:
                 print(f"[wolf] groq ok len={len(text)}")
                 return text.strip()
     except Exception as e:
@@ -152,69 +135,38 @@ def call_groq(messages: list, max_tokens: int = 2000) -> str | None:
     return None
 
 
-def get_ai_response(messages: list, max_tokens: int = 2000) -> str | None:
+def get_reply(messages: list, max_tokens: int = 4000) -> str | None:
     reply = call_groq(messages, max_tokens)
     if not reply:
         reply = call_openrouter(messages, max_tokens)
     return reply
 
 
-# ── Извлечение JSON из ответа ───────────────────────────────────────────────
+# ── Парсинг ответа ───────────────────────────────────────────────────────────
 
-def extract_json(raw: str) -> dict | None:
-    raw = raw.strip()
-    try:
-        return json.loads(raw)
-    except Exception:
-        pass
-    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group(1))
-        except Exception:
-            pass
-    s, e = raw.find("{"), raw.rfind("}")
-    if s != -1 and e > s:
-        try:
-            return json.loads(raw[s:e+1])
-        except Exception:
-            pass
-    return None
+def parse_response(raw: str) -> dict:
+    """Извлекает [PREVIEW] или [CODE] из ответа модели."""
+    preview = re.search(r"\[PREVIEW\](.*?)\[/PREVIEW\]", raw, re.DOTALL)
+    if preview:
+        html = preview.group(1).strip()
+        text = re.sub(r"\[PREVIEW\].*?\[/PREVIEW\]", "", raw, flags=re.DOTALL).strip()
+        if not text:
+            text = "Готово! Смотри превью →"
+        return {"type": "preview", "reply": text, "html": html}
+
+    code = re.search(r"\[CODE\](.*?)\[/CODE\]", raw, re.DOTALL)
+    if code:
+        c    = code.group(1).strip()
+        text = re.sub(r"\[CODE\].*?\[/CODE\]", f"```\n{c}\n```", raw, flags=re.DOTALL).strip()
+        return {"type": "code", "reply": text, "code": c}
+
+    return {"type": "chat", "reply": raw}
 
 
-# ── Определение намерения — нужна ли генерация кода ────────────────────────
-
-def is_generation_request(text: str) -> bool:
-    t = text.lower()
-    gen_words = ["создай", "сделай", "напиши", "сгенерируй", "построй", "сверстай"]
-    target_words = ["сайт", "страниц", "приложен", "лендинг", "форм", "калькулятор",
-                    "портфолио", "магазин", "блог", "landing", "html", "интерфейс"]
-    return any(g in t for g in gen_words) and any(tg in t for tg in target_words)
-
-
-# ── Локальный фолбэк ────────────────────────────────────────────────────────
-
-FALLBACK = {
-    "beginner": [
-        "Давай разберёмся вместе! Расскажи подробнее — что именно хочешь создать?",
-        "Отлично, хорошая идея! Уточни пожалуйста — это для бизнеса, личного использования, или учёбы?",
-        "Понял тебя. Расскажи немного больше о деталях — я помогу сделать всё правильно.",
-    ],
-    "pro": [
-        "Уточни стек и требования.",
-        "Нужно больше контекста — опиши архитектуру или покажи существующий код.",
-        "Что именно нужно: компонент, хук, API, или что-то другое?",
-    ],
-    "intermediate": [
-        "Интересный вопрос! Давай разберём по шагам — с чего хочешь начать?",
-        "Хороший подход. Уточни что уже пробовал и где застрял?",
-        "Понял задачу. Есть несколько способов решить это — расскажи подробнее о контексте.",
-    ],
-}
-
+# ── Хендлер ─────────────────────────────────────────────────────────────────
 
 def handler(event: dict, context) -> dict:
-    """Обработчик чата Клан Волка."""
+    """Основной обработчик Клан Волка."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
 
@@ -224,86 +176,39 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 400, "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
                 "body": json.dumps({"error": "INVALID_JSON"})}
 
-    action   = body.get("action", "chat")
-    mode     = body.get("mode", "beginner")   # beginner | pro | intermediate
+    mode     = body.get("mode", "beginner")
     messages = body.get("messages", [])
     user_msg = body.get("message", "").strip()
 
     if not user_msg and messages:
-        user_msg = next((m.get("text", "") for m in reversed(messages) if m.get("role") == "user"), "")
+        user_msg = next((m.get("text","") for m in reversed(messages) if m.get("role") == "user"), "")
 
-    print(f"[wolf] action={action} mode={mode} msg={user_msg[:60]}")
+    print(f"[wolf] mode={mode} msg={user_msg[:80]}")
 
-    # ── Режим генерации проекта (HTML превью) ──
-    if action == "generate" or is_generation_request(user_msg):
-        gen_messages = [
-            {"role": "system", "content": GENERATOR_PROMPT},
-            {"role": "user", "content": f"Создай: {user_msg}"},
-        ]
-        raw = get_ai_response(gen_messages, max_tokens=6000)
-        if raw:
-            data = extract_json(raw)
-            if data and data.get("html") and len(data["html"]) > 200:
-                return {
-                    "statusCode": 200,
-                    "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-                    "body": json.dumps({
-                        "type": "preview",
-                        "html": data["html"],
-                        "title": data.get("title", "Проект"),
-                        "description": data.get("description", ""),
-                        "reply": f"✅ Готово! Сгенерировал **{data.get('title','проект')}**. Смотри превью справа. Что изменить?",
-                    }, ensure_ascii=False),
-                }
-        # Фолбэк — возвращаем как обычный ответ
+    # Системный промпт + история
+    api_messages = [{"role": "system", "content": SYSTEM_PROMPT + f"\n\nТекущий режим: {mode}"}]
+    for m in (messages or [])[-20:]:
+        role = "user" if m.get("role") == "user" else "assistant"
+        text = (m.get("text") or "").strip()
+        if text:
+            api_messages.append({"role": role, "content": text})
+
+    raw = get_reply(api_messages, max_tokens=6000)
+
+    if not raw:
+        # ИИ недоступен — возвращаем понятную ошибку с инструкцией
         return {
             "statusCode": 200,
             "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
             "body": json.dumps({
-                "type": "chat",
-                "reply": "Опиши подробнее что нужно создать — я сгенерирую готовый проект.",
+                "type": "error",
+                "reply": "⚠️ ИИ временно недоступен — нет действующего API-ключа.\n\nЧтобы всё заработало: добавь **GROQ_API_KEY** (бесплатно на console.groq.com/keys) или обнови **OPENROUTER_API_KEY** на openrouter.ai/keys",
             }, ensure_ascii=False),
         }
 
-    # ── Обычный чат ──
-    system = SYSTEM_PROMPTS.get(mode, SYSTEM_PROMPTS["beginner"])
-    api_messages = [{"role": "system", "content": system}]
-    for m in (messages or [])[-16:]:
-        role = "user" if m.get("role") == "user" else "assistant"
-        text = m.get("text", "").strip()
-        if text:
-            api_messages.append({"role": role, "content": text})
-
-    reply = get_ai_response(api_messages, max_tokens=1200)
-
-    if not reply:
-        import random as rnd
-        reply = rnd.choice(FALLBACK.get(mode, FALLBACK["beginner"]))
-
-    # Проверяем есть ли [PREVIEW] в ответе
-    preview_match = re.search(r"\[PREVIEW\](.*?)\[/PREVIEW\]", reply, re.DOTALL)
-    code_match    = re.search(r"\[CODE\](.*?)\[/CODE\]",       reply, re.DOTALL)
-
-    if preview_match:
-        html = preview_match.group(1).strip()
-        clean_reply = re.sub(r"\[PREVIEW\].*?\[/PREVIEW\]", "👆 Смотри превью!", reply, flags=re.DOTALL).strip()
-        return {
-            "statusCode": 200,
-            "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-            "body": json.dumps({"type": "preview", "html": html, "reply": clean_reply}, ensure_ascii=False),
-        }
-
-    if code_match:
-        code = code_match.group(1).strip()
-        clean_reply = re.sub(r"\[CODE\].*?\[/CODE\]", f"```\n{code}\n```", reply, flags=re.DOTALL).strip()
-        return {
-            "statusCode": 200,
-            "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-            "body": json.dumps({"type": "code", "code": code, "reply": clean_reply}, ensure_ascii=False),
-        }
-
+    result = parse_response(raw)
     return {
         "statusCode": 200,
         "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-        "body": json.dumps({"type": "chat", "reply": reply}, ensure_ascii=False),
+        "body": json.dumps(result, ensure_ascii=False),
     }
