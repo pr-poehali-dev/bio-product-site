@@ -113,14 +113,13 @@ INTENT_CONFIG = {
 # ── Провайдеры ───────────────────────────────────────────────────────────────
 
 OPENROUTER_MODELS = [
-    "google/gemini-2.5-flash-preview:free",
-    "google/gemini-2.0-flash-exp:free",
-    "deepseek/deepseek-r1-0528:free",
-    "deepseek/deepseek-chat-v3-0324:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
     "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen3-235b-a22b:free",
-    "mistralai/devstral-small:free",
+    "google/gemma-3-12b-it:free",
+    "google/gemma-3-27b-it:free",
     "mistralai/mistral-7b-instruct:free",
+    "qwen/qwen-2-7b-instruct:free",
+    "microsoft/phi-3-mini-128k-instruct:free",
 ]
 
 def call_openrouter(messages: list, max_tokens: int) -> str | None:
