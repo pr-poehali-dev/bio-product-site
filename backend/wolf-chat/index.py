@@ -113,13 +113,14 @@ INTENT_CONFIG = {
 # ── Провайдеры ───────────────────────────────────────────────────────────────
 
 OPENROUTER_MODELS = [
-    "meta-llama/llama-3.1-8b-instruct:free",
+    "qwen/qwen3-coder:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
     "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-3-12b-it:free",
-    "google/gemma-3-27b-it:free",
-    "mistralai/mistral-7b-instruct:free",
-    "qwen/qwen-2-7b-instruct:free",
-    "microsoft/phi-3-mini-128k-instruct:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
+    "deepseek/deepseek-r1:free",
+    "google/gemma-2-9b-it:free",
+    "mistralai/mistral-small-3.2-24b-instruct:free",
+    "tngtech/deepseek-r1t-chimera:free",
 ]
 
 def call_openrouter(messages: list, max_tokens: int) -> str | None:
