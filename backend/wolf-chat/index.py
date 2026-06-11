@@ -70,20 +70,60 @@ def get_memory(session_id: str, limit: int = 20) -> list:
     except Exception:
         return []
 
-def get_knowledge(hint: str = "", limit: int = 4) -> list:
+def get_knowledge(hint: str = "", limit: int = 6) -> list:
     try:
         with db() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 if hint:
                     cur.execute("""SELECT topic, content FROM wolf_knowledge
                                    WHERE topic ILIKE %s OR content ILIKE %s
-                                   ORDER BY used_count DESC LIMIT %s""",
+                                   ORDER BY used_count DESC, created_at DESC LIMIT %s""",
                                 (f"%{hint}%", f"%{hint}%", limit))
                 else:
                     cur.execute("SELECT topic,content FROM wolf_knowledge ORDER BY used_count DESC LIMIT %s", (limit,))
                 return [dict(r) for r in cur.fetchall()]
     except Exception:
         return []
+
+
+def auto_learn_from_conversation(session_id: str, user_msg: str, ai_reply: str):
+    """Автоматически извлекает факты из разговора и сохраняет в базу знаний."""
+    try:
+        # Простая эвристика — ищем паттерны с личной информацией
+        facts_to_save = []
+
+        msg_lower = user_msg.lower()
+
+        # Имя пользователя
+        import re as _re
+        name_match = _re.search(r"меня зовут (\w+)|я (\w+),|моё имя (\w+)", msg_lower)
+        if name_match:
+            name = next(g for g in name_match.groups() if g)
+            facts_to_save.append(("имя пользователя", f"Пользователя зовут {name.capitalize()}"))
+
+        # Бизнес/проект
+        biz_match = _re.search(r"(мой бизнес|моя компания|мой проект|мой магазин|я продаю|я занимаюсь)[:\s]+(.{10,80})", msg_lower)
+        if biz_match:
+            facts_to_save.append(("бизнес пользователя", biz_match.group(0)[:100]))
+
+        # Технический уровень
+        if any(w in msg_lower for w in ["я новичок","не знаю программирование","никогда не программировал"]):
+            facts_to_save.append(("уровень", "Пользователь — новичок в программировании"))
+        elif any(w in msg_lower for w in ["я разработчик","я программист","работаю с react","знаю python"]):
+            facts_to_save.append(("уровень", "Пользователь — опытный разработчик"))
+
+        for topic, content in facts_to_save:
+            # Проверяем что такого факта ещё нет
+            with db() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id FROM wolf_knowledge WHERE topic=%s AND session_id_ref=%s LIMIT 1",
+                                (topic, session_id))
+                    # Просто добавляем, дубли не страшны
+                    cur.execute("INSERT INTO wolf_knowledge(topic,content,source) VALUES(%s,%s,%s)",
+                                (topic, content, f"auto:{session_id[:8]}"))
+                conn.commit()
+    except Exception as e:
+        print(f"[wolf] auto_learn err: {e}")
 
 def add_knowledge(topic: str, content: str, source: str = "conversation"):
     try:
@@ -246,6 +286,9 @@ def action_chat(body: dict) -> dict:
 
     save_memory(session_id, "user",      user_msg)
     save_memory(session_id, "assistant", raw)
+
+    # Автообучение — извлекаем факты из разговора
+    auto_learn_from_conversation(session_id, user_msg, raw)
 
     pm = re.search(r"\[PREVIEW\](.*?)\[/PREVIEW\]", raw, re.DOTALL)
     if pm:
