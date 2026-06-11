@@ -1,133 +1,102 @@
 """
-Клан Волка — AI-инструмент для создания сайтов и приложений.
-Логика: роутинг намерения → нужный промпт → результат сразу.
-Без вопросов. Без воды. Сделал — показал.
+Клан Волка — полный бэкенд инструмента создания сайтов.
+Действия: generate (создать сайт), edit (доработать), chat (вопрос),
+          save (сохранить в БД), projects (список), get (получить), delete (удалить).
 """
 import json
 import os
 import re
 import urllib.request
 import urllib.error
+import psycopg2
+import psycopg2.extras
 
-CORS_HEADERS = {
+CORS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Max-Age": "86400",
 }
+JSON = {"Content-Type": "application/json"}
 
-# ── Роутинг намерений ────────────────────────────────────────────────────────
+# ── БД ───────────────────────────────────────────────────────────────────────
 
-def detect_intent(text: str) -> str:
-    t = text.lower()
-    build_verbs = ["создай","сделай","напиши","сверстай","сгенерируй","построй","собери","разработай","накодируй","придумай"]
-    build_nouns = ["сайт","страниц","лендинг","landing","приложен","магазин","портфолио","форм","калькулятор",
-                   "интерфейс","дашборд","dashboard","блог","сервис","виджет","html","quiz","тест","игр","таблиц","меню"]
-    fix_verbs   = ["исправь","почини","перепиши","улучши","измени","добавь","убери","обнови","переделай","доработай","поправь"]
-    explain_k   = ["как работает","объясни","что такое","почему","зачем","в чём разница","расскажи","как использовать","что значит"]
-    code_nouns  = ["функци","класс","хук","hook","api","запрос","fetch","алгоритм","скрипт","метод","компонент"]
+def db():
+    return psycopg2.connect(os.environ["DATABASE_URL"])
 
-    if any(v in t for v in fix_verbs):
-        return "edit"
-    if any(v in t for v in build_verbs) and any(n in t for n in build_nouns):
-        return "build_site"
-    if any(v in t for v in build_verbs) and any(n in t for n in code_nouns):
-        return "build_code"
-    if any(k in t for k in explain_k):
-        return "explain"
-    if any(v in t for v in build_verbs):
-        return "build_site"
-    return "chat"
-
+def resp(body: dict, code: int = 200) -> dict:
+    return {"statusCode": code, "headers": {**CORS, **JSON}, "body": json.dumps(body, ensure_ascii=False, default=str)}
 
 # ── Промпты ──────────────────────────────────────────────────────────────────
 
-BUILD_SITE_PROMPT = """Ты — лучший веб-разработчик и дизайнер мира. Создаёшь готовые сайты по описанию.
+GENERATE_PROMPT = """Ты — профессиональный веб-разработчик и дизайнер. Создаёшь готовые сайты по описанию.
 
-ЖЕЛЕЗНОЕ ПРАВИЛО: получил описание — сразу генерируешь полный сайт. НИКАКИХ вопросов, НИКАКИХ уточнений.
-Если информации мало — придумай сам, как опытный дизайнер. Сделай красиво.
+ПРАВИЛО №1: НИКОГДА не задавай вопросов. Получил описание — сразу делаешь. Придумай детали сам.
+ПРАВИЛО №2: Возвращай ТОЛЬКО JSON, без лишнего текста вокруг:
+{"title": "Название сайта", "description": "Одна строка о чём сайт", "html": "<!DOCTYPE html>..."}
 
-ФОРМАТ ОТВЕТА:
-1. Одно предложение: что именно ты сделал.
-2. Полный HTML в теге [PREVIEW]...[/PREVIEW]
+ТРЕБОВАНИЯ К HTML:
+- Полный HTML5 файл (<!DOCTYPE html> до </html>)
+- CSS в <style>: современный дизайн, красивые цвета, градиенты, тени, анимации hover
+- JS в <script>: рабочая интерактивность
+- Google Fonts через @import — единственный внешний ресурс
+- Flexbox/Grid, адаптивный под мобиль
+- Реальный текст под тему — НИКАКОГО Lorem ipsum
+- Минимум 3-4 секции с контентом
+- Профессиональный результат"""
 
-ТРЕБОВАНИЯ К КОДУ:
-- Полный HTML5 файл от <!DOCTYPE html> до </html>
-- Весь CSS в <style>: современный дизайн, хорошая типографика, градиенты, тени, hover-анимации
-- Весь JS в <script>: интерактивность, плавные эффекты, рабочая логика
-- Google Fonts через @import в CSS — единственный внешний ресурс
-- Flexbox/Grid — адаптивность под мобиль
-- Реальный текст под тему — никаких Lorem ipsum и "здесь будет текст"
-- Минимум 3 секции с реальным содержимым
-- Профессиональный результат, как у топ-агентства"""
+EDIT_PROMPT = """Ты — веб-разработчик. Дорабатываешь существующий сайт по запросу.
 
-BUILD_CODE_PROMPT = """Ты — Senior Full-Stack разработчик. Пишешь рабочий код сразу, без вопросов.
+ПРАВИЛО: Получил код + запрос — сразу вносишь изменения. Без вопросов.
+Возвращай ТОЛЬКО JSON:
+{"title": "Название", "description": "Описание", "html": "<!DOCTYPE html>...полный обновлённый код..."}
 
-ФОРМАТ:
-1. 1-2 предложения: что делает этот код.
-2. Код в [CODE]...[/CODE]
-3. Если нужен HTML файл — в [PREVIEW]...[/PREVIEW]
+Возвращай ПОЛНЫЙ файл целиком, не только изменения."""
 
-ТРЕБОВАНИЯ:
-- Код рабочий, современный (ES2024 / Python 3.11+ / TypeScript)
-- Без TODO, без заглушек — только готовое
-- Краткие комментарии на русском на ключевых строках
-- Edge cases обработаны"""
+CHAT_PROMPT = """Ты — Волк, помощник платформы «Клан Волка» для создания сайтов.
+Отвечай коротко и по делу. Если хотят создать сайт — предложи описать идею.
+Отвечай на русском."""
 
-EDIT_PROMPT = """Ты — разработчик который дорабатывает существующий код.
+# ── ИИ провайдеры ────────────────────────────────────────────────────────────
 
-ЖЕЛЕЗНОЕ ПРАВИЛО: получил код + запрос — сразу вносишь изменения. Без вопросов.
-
-ФОРМАТ:
-1. Одно предложение: что именно изменил.
-2. Полный обновлённый код — не diff, а весь файл целиком.
-   HTML → [PREVIEW]...[/PREVIEW]
-   Другой код → [CODE]...[/CODE]"""
-
-EXPLAIN_PROMPT = """Ты — опытный разработчик и отличный учитель.
-
-Объясняй просто, с аналогиями из жизни.
-Пример кода если нужен — в [CODE]...[/CODE]
-Максимум 5-6 предложений. Никакой воды."""
-
-CHAT_PROMPT = """Ты — Волк, ИИ-помощник платформы «Клан Волка» для создания сайтов.
-
-Отвечай коротко и по делу. Если человек хочет что-то создать — предложи сделать прямо сейчас.
-Если не понял запрос — один короткий вопрос."""
-
-MODE_SUFFIX = {
-    "beginner":     "\n\nСТИЛЬ: тепло, просто, без жаргона, подбадривай.",
-    "intermediate": "\n\nСТИЛЬ: дружелюбно, объясняй принципы кратко.",
-    "pro":          "\n\nСТИЛЬ: коротко, технично, без вступлений.",
-}
-
-INTENT_CONFIG = {
-    "build_site": (BUILD_SITE_PROMPT, 8000),
-    "build_code": (BUILD_CODE_PROMPT, 5000),
-    "edit":       (EDIT_PROMPT,       8000),
-    "explain":    (EXPLAIN_PROMPT,    2000),
-    "chat":       (CHAT_PROMPT,       1500),
-}
+def call_groq(messages: list, max_tokens: int = 8000) -> str | None:
+    key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not key:
+        return None
+    for model in ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama3-70b-8192"]:
+        try:
+            payload = json.dumps({"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.7}).encode()
+            req = urllib.request.Request(
+                "https://api.groq.com/openai/v1/chat/completions",
+                data=payload,
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=55) as r:
+                data = json.loads(r.read())
+                text = data["choices"][0]["message"]["content"]
+                if text and len(text.strip()) > 20:
+                    print(f"[wolf] ✓ groq/{model} len={len(text)}")
+                    return text.strip()
+        except urllib.error.HTTPError as e:
+            print(f"[wolf] groq/{model} HTTP {e.code}")
+        except Exception as e:
+            print(f"[wolf] groq/{model} exc: {e}")
+    return None
 
 
-# ── Провайдеры ───────────────────────────────────────────────────────────────
-
-OPENROUTER_MODELS = [
-    "qwen/qwen3-coder:free",
-    "nousresearch/hermes-3-llama-3.1-405b:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "deepseek/deepseek-r1:free",
-    "google/gemma-2-9b-it:free",
-    "mistralai/mistral-small-3.2-24b-instruct:free",
-    "tngtech/deepseek-r1t-chimera:free",
-]
-
-def call_openrouter(messages: list, max_tokens: int) -> str | None:
+def call_openrouter(messages: list, max_tokens: int = 8000) -> str | None:
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not key:
         return None
-    for model in OPENROUTER_MODELS:
+    models = [
+        "nousresearch/hermes-3-llama-3.1-405b:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "meta-llama/llama-3.1-8b-instruct:free",
+        "google/gemma-2-9b-it:free",
+        "qwen/qwen-2-7b-instruct:free",
+    ]
+    for model in models:
         try:
             payload = json.dumps({"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.7}).encode()
             req = urllib.request.Request(
@@ -138,128 +107,229 @@ def call_openrouter(messages: list, max_tokens: int) -> str | None:
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=55) as r:
-                result = json.loads(r.read())
-                if result.get("error"):
-                    print(f"[wolf] {model} err: {result['error'].get('message','')[:60]}")
+                data = json.loads(r.read())
+                if data.get("error"):
+                    print(f"[wolf] or/{model} err: {data['error'].get('message','')[:60]}")
                     continue
-                choices = result.get("choices") or []
+                choices = data.get("choices") or []
                 if not choices:
                     continue
                 text = choices[0].get("message", {}).get("content", "")
-                if text and len(text.strip()) > 10:
-                    print(f"[wolf] ✓ {model} len={len(text)}")
+                if text and len(text.strip()) > 20:
+                    print(f"[wolf] ✓ or/{model} len={len(text)}")
                     return text.strip()
         except urllib.error.HTTPError as e:
-            print(f"[wolf] {model} HTTP {e.code}")
+            print(f"[wolf] or/{model} HTTP {e.code}")
         except Exception as e:
-            print(f"[wolf] {model} exc: {e}")
+            print(f"[wolf] or/{model} exc: {e}")
     return None
 
 
-def call_groq(messages: list, max_tokens: int) -> str | None:
-    key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not key:
-        return None
-    try:
-        payload = json.dumps({"model": "llama-3.3-70b-versatile", "messages": messages,
-                              "max_tokens": max_tokens, "temperature": 0.7}).encode()
-        req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=payload,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=55) as r:
-            result = json.loads(r.read())
-            text = result["choices"][0]["message"]["content"]
-            if text and len(text.strip()) > 10:
-                print(f"[wolf] ✓ groq len={len(text)}")
-                return text.strip()
-    except Exception as e:
-        print(f"[wolf] groq exc: {e}")
-    return None
-
-
-def get_reply(messages: list, max_tokens: int) -> str | None:
+def ai(messages: list, max_tokens: int = 8000) -> str | None:
     return call_groq(messages, max_tokens) or call_openrouter(messages, max_tokens)
 
 
-# ── Парсинг ──────────────────────────────────────────────────────────────────
+# ── Парсинг JSON из ответа ────────────────────────────────────────────────────
 
-def parse_response(raw: str) -> dict:
-    m = re.search(r"\[PREVIEW\](.*?)\[/PREVIEW\]", raw, re.DOTALL)
+def extract_json(raw: str) -> dict | None:
+    raw = raw.strip()
+    # Убираем <think>...</think> (deepseek r1)
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
     if m:
-        html = m.group(1).strip()
-        text = re.sub(r"\[PREVIEW\].*?\[/PREVIEW\]", "", raw, flags=re.DOTALL).strip()
-        return {"type": "preview", "reply": text or "Готово! Смотри превью →", "html": html}
+        try:
+            return json.loads(m.group(1))
+        except Exception:
+            pass
+    s, e = raw.find("{"), raw.rfind("}")
+    if s != -1 and e > s:
+        try:
+            return json.loads(raw[s:e+1])
+        except Exception:
+            pass
+    return None
 
-    m = re.search(r"\[CODE\](.*?)\[/CODE\]", raw, re.DOTALL)
-    if m:
-        code = m.group(1).strip()
-        text = re.sub(r"\[CODE\].*?\[/CODE\]", f"```\n{code}\n```", raw, flags=re.DOTALL).strip()
-        return {"type": "code", "reply": text, "code": code}
 
-    return {"type": "chat", "reply": raw}
+# ── Действия ─────────────────────────────────────────────────────────────────
+
+def action_generate(body: dict) -> dict:
+    prompt = body.get("prompt", "").strip()
+    if not prompt:
+        return resp({"error": "Пустой запрос"}, 400)
+
+    messages = [
+        {"role": "system", "content": GENERATE_PROMPT},
+        {"role": "user",   "content": f"Создай сайт: {prompt}"},
+    ]
+    raw = ai(messages, 8000)
+    if not raw:
+        return resp({"error": "no_key"}, 200)
+
+    data = extract_json(raw)
+    if not data or not data.get("html"):
+        # Попробуем вытащить HTML напрямую
+        if "<!DOCTYPE" in raw:
+            start = raw.find("<!DOCTYPE")
+            return resp({"title": "Сайт", "description": prompt, "html": raw[start:]})
+        return resp({"error": "Не удалось сгенерировать. Попробуй ещё раз."}, 200)
+
+    return resp({
+        "title":       data.get("title", "Сайт"),
+        "description": data.get("description", prompt),
+        "html":        data["html"],
+    })
 
 
-# ── Handler ──────────────────────────────────────────────────────────────────
+def action_edit(body: dict) -> dict:
+    current_html = body.get("html", "").strip()
+    prompt       = body.get("prompt", "").strip()
+    if not current_html or not prompt:
+        return resp({"error": "Нужен html и prompt"}, 400)
+
+    messages = [
+        {"role": "system", "content": EDIT_PROMPT},
+        {"role": "user",   "content": f"Текущий код:\n```html\n{current_html[:14000]}\n```\n\nЗапрос: {prompt}"},
+    ]
+    raw = ai(messages, 8000)
+    if not raw:
+        return resp({"error": "no_key"}, 200)
+
+    data = extract_json(raw)
+    if not data or not data.get("html"):
+        if "<!DOCTYPE" in raw:
+            start = raw.find("<!DOCTYPE")
+            return resp({"title": "Сайт", "description": prompt, "html": raw[start:]})
+        return resp({"error": "Не удалось обновить. Попробуй ещё раз."}, 200)
+
+    return resp({
+        "title":       data.get("title", "Сайт"),
+        "description": data.get("description", prompt),
+        "html":        data["html"],
+    })
+
+
+def action_chat(body: dict) -> dict:
+    messages_in = body.get("messages", [])
+    user_msg    = body.get("message", "").strip()
+    if not user_msg:
+        return resp({"error": "Пустое сообщение"}, 400)
+
+    api_msgs = [{"role": "system", "content": CHAT_PROMPT}]
+    for m in (messages_in or [])[-16:]:
+        role = "user" if m.get("role") == "user" else "assistant"
+        text = (m.get("text") or "").strip()
+        if text:
+            api_msgs.append({"role": role, "content": text})
+
+    raw = ai(api_msgs, 1500)
+    if not raw:
+        return resp({"reply": "no_key"})
+    return resp({"reply": raw})
+
+
+def action_save(body: dict) -> dict:
+    session_id  = body.get("session_id", "anon")
+    title       = body.get("title", "Без названия")
+    description = body.get("description", "")
+    html        = body.get("html", "")
+    project_id  = body.get("id")
+
+    if not html:
+        return resp({"error": "Нет HTML"}, 400)
+
+    with db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if project_id:
+                cur.execute(
+                    "UPDATE wolf_projects SET title=%s, description=%s, html=%s, updated_at=NOW() WHERE id=%s AND session_id=%s RETURNING id",
+                    (title, description, html, project_id, session_id)
+                )
+                row = cur.fetchone()
+                if not row:
+                    return resp({"error": "Проект не найден"}, 404)
+                pid = row["id"]
+            else:
+                cur.execute(
+                    "INSERT INTO wolf_projects (session_id, title, description, html) VALUES (%s,%s,%s,%s) RETURNING id",
+                    (session_id, title, description, html)
+                )
+                pid = cur.fetchone()["id"]
+        conn.commit()
+    return resp({"id": pid, "saved": True})
+
+
+def action_projects(body: dict) -> dict:
+    session_id = body.get("session_id", "anon")
+    with db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, title, description, created_at, updated_at FROM wolf_projects WHERE session_id=%s ORDER BY updated_at DESC LIMIT 50",
+                (session_id,)
+            )
+            rows = cur.fetchall()
+    return resp({"projects": [dict(r) for r in rows]})
+
+
+def action_get(body: dict) -> dict:
+    project_id = body.get("id")
+    session_id = body.get("session_id", "anon")
+    if not project_id:
+        return resp({"error": "Нет id"}, 400)
+    with db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM wolf_projects WHERE id=%s AND session_id=%s",
+                (project_id, session_id)
+            )
+            row = cur.fetchone()
+    if not row:
+        return resp({"error": "Не найден"}, 404)
+    return resp(dict(row))
+
+
+def action_delete(body: dict) -> dict:
+    project_id = body.get("id")
+    session_id = body.get("session_id", "anon")
+    if not project_id:
+        return resp({"error": "Нет id"}, 400)
+    with db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM wolf_projects WHERE id=%s AND session_id=%s", (project_id, session_id))
+        conn.commit()
+    return resp({"deleted": True})
+
+
+# ── Handler ───────────────────────────────────────────────────────────────────
+
+ACTIONS = {
+    "generate": action_generate,
+    "edit":     action_edit,
+    "chat":     action_chat,
+    "save":     action_save,
+    "projects": action_projects,
+    "get":      action_get,
+    "delete":   action_delete,
+}
 
 def handler(event: dict, context) -> dict:
-    """Клан Волка — главный обработчик."""
+    """Клан Волка — единый бэкенд: генерация, редактирование, хранение проектов."""
     if event.get("httpMethod") == "OPTIONS":
-        return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
+        return {"statusCode": 200, "headers": CORS, "body": ""}
 
     try:
         body = json.loads(event.get("body") or "{}")
     except Exception:
-        return {"statusCode": 400, "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-                "body": json.dumps({"error": "INVALID_JSON"})}
+        return resp({"error": "INVALID_JSON"}, 400)
 
-    mode         = body.get("mode", "beginner")
-    history      = body.get("messages", [])
-    user_msg     = body.get("message", "").strip()
-    current_html = body.get("current_html", "")
+    action = body.get("action", "")
+    print(f"[wolf] action={action}")
 
-    if not user_msg and history:
-        user_msg = next((m.get("text","") for m in reversed(history) if m.get("role") == "user"), "")
-    if not user_msg:
-        return {"statusCode": 400, "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-                "body": json.dumps({"error": "EMPTY"})}
+    fn = ACTIONS.get(action)
+    if not fn:
+        return resp({"error": f"Неизвестное действие: {action}"}, 400)
 
-    intent = detect_intent(user_msg)
-    print(f"[wolf] mode={mode} intent={intent} msg={user_msg[:70]}")
-
-    base_prompt, max_tok = INTENT_CONFIG.get(intent, INTENT_CONFIG["chat"])
-    system = base_prompt + MODE_SUFFIX.get(mode, "")
-
-    api_messages = [{"role": "system", "content": system}]
-    for m in (history or [])[-20:]:
-        role = "user" if m.get("role") == "user" else "assistant"
-        text = (m.get("text") or "").strip()
-        if text:
-            api_messages.append({"role": role, "content": text})
-
-    # Для редактирования — вставляем текущий HTML в последний user-запрос
-    if intent == "edit" and current_html:
-        edit_content = f"Текущий код:\n```html\n{current_html[:12000]}\n```\n\nЗапрос на изменение: {user_msg}"
-        if api_messages and api_messages[-1]["role"] == "user":
-            api_messages[-1]["content"] = edit_content
-        else:
-            api_messages.append({"role": "user", "content": edit_content})
-
-    raw = get_reply(api_messages, max_tok)
-
-    if not raw:
-        return {
-            "statusCode": 200,
-            "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-            "body": json.dumps({"type": "no_key", "reply": "no_key"}, ensure_ascii=False),
-        }
-
-    result = parse_response(raw)
-    result["intent"] = intent
-    return {
-        "statusCode": 200,
-        "headers": {**CORS_HEADERS, "Content-Type": "application/json"},
-        "body": json.dumps(result, ensure_ascii=False),
-    }
+    return fn(body)

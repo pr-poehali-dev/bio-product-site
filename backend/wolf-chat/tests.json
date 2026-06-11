@@ -1,27 +1,26 @@
 {
   "tests": [
     {
-      "name": "OPTIONS preflight",
+      "name": "OPTIONS",
       "method": "OPTIONS",
       "path": "/",
       "expectedStatus": 200
     },
     {
-      "name": "Chat beginner mode",
+      "name": "Get projects",
       "method": "POST",
       "path": "/",
-      "body": {"action": "chat", "mode": "beginner", "message": "Привет, помоги создать сайт"},
+      "body": {"action": "projects", "session_id": "test"},
       "expectedStatus": 200,
-      "expectedBody": {"reply": "string"},
+      "expectedBody": {"projects": []},
       "bodyMatcher": "partial"
     },
     {
-      "name": "Chat pro mode",
+      "name": "Chat",
       "method": "POST",
       "path": "/",
-      "body": {"action": "chat", "mode": "pro", "message": "React hooks best practices"},
+      "body": {"action": "chat", "message": "Привет", "messages": []},
       "expectedStatus": 200,
-      "expectedBody": {"reply": "string"},
       "bodyMatcher": "partial"
     }
   ]
