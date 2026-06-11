@@ -4,40 +4,40 @@
 
 @layer base {
   :root {
-    --background: 220 20% 5%;
-    --foreground: 180 100% 90%;
+    --background: 240 10% 5%;
+    --foreground: 0 0% 93%;
 
-    --card: 220 20% 8%;
-    --card-foreground: 180 100% 90%;
+    --card: 240 10% 7%;
+    --card-foreground: 0 0% 93%;
 
-    --popover: 220 20% 8%;
-    --popover-foreground: 180 100% 90%;
+    --popover: 240 10% 7%;
+    --popover-foreground: 0 0% 93%;
 
-    --primary: 187 100% 42%;
-    --primary-foreground: 220 20% 5%;
+    --primary: 142 70% 45%;
+    --primary-foreground: 240 10% 5%;
 
-    --secondary: 270 60% 55%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 38 90% 55%;
+    --secondary-foreground: 0 0% 5%;
 
-    --muted: 220 20% 12%;
-    --muted-foreground: 220 10% 55%;
+    --muted: 240 10% 10%;
+    --muted-foreground: 240 5% 50%;
 
-    --accent: 270 60% 55%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 187 100% 42%;
+    --accent-foreground: 240 10% 5%;
 
     --destructive: 0 80% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 20% 15%;
-    --input: 220 20% 12%;
-    --ring: 187 100% 42%;
+    --border: 240 10% 13%;
+    --input: 240 10% 10%;
+    --ring: 142 70% 45%;
 
     --radius: 0.75rem;
 
-    --stefani-cyan: #06b6d4;
-    --stefani-violet: #8b5cf6;
-    --stefani-dark: #050a14;
-    --stefani-grid: rgba(6, 182, 212, 0.07);
+    --wolf-green: #22c55e;
+    --wolf-amber: #f59e0b;
+    --wolf-cyan: #06b6d4;
+    --wolf-dark: #0c0c0f;
   }
 }
 
@@ -48,8 +48,8 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: "Rajdhani", sans-serif;
-    background-color: #050a14;
+    font-family: "Inter", "Segoe UI", sans-serif;
+    background-color: #0c0c0f;
     overflow-x: hidden;
   }
 

@@ -7,21 +7,21 @@
       "expectedStatus": 200
     },
     {
-      "name": "Chat with Stefani",
+      "name": "Chat beginner mode",
       "method": "POST",
       "path": "/",
-      "body": {"messages": [{"role": "user", "text": "Привет, кто ты?"}], "mood": "calm"},
+      "body": {"action": "chat", "mode": "beginner", "message": "Привет, помоги создать сайт"},
       "expectedStatus": 200,
       "expectedBody": {"reply": "string"},
       "bodyMatcher": "partial"
     },
     {
-      "name": "Generate game fallback",
+      "name": "Chat pro mode",
       "method": "POST",
       "path": "/",
-      "body": {"action": "generate_game", "request": "аркада", "mode": "create"},
+      "body": {"action": "chat", "mode": "pro", "message": "React hooks best practices"},
       "expectedStatus": 200,
-      "expectedBody": {"html": "string"},
+      "expectedBody": {"reply": "string"},
       "bodyMatcher": "partial"
     }
   ]
